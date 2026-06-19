@@ -308,13 +308,22 @@ export class World {
     this._systems.push(system);
   }
 
+  /** Expose registered systems (read-only, for debugging). */
+  getSystems(): readonly System[] { return this._systems; }
+
+  /** Debug hooks: called before/after each system.update(). Set to null to disable. */
+  onSystemBegin: ((sys: System, world: World) => void) | null = null;
+  onSystemEnd: ((sys: System, world: World) => void) | null = null;
+
   /**
    * Run all registered systems in order.
    * @param context  Passed through to every System.update() call.
    */
   update(context: unknown): void {
     for (const sys of this._systems) {
+      this.onSystemBegin?.(sys, this);
       sys.update(this, context);
+      this.onSystemEnd?.(sys, this);
     }
   }
 }
