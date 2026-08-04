@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-08-03T20:47:28.537Z",
+  "runtime": "Bun 1.3.4",
+  "results": [
+    {
+      "name": "simple: forEach(Pos,Vel)",
+      "throughput": 508.77100868126155,
+      "usPerIter": 196.55208
+    },
+    {
+      "name": "simple: batch(Pos,Vel)",
+      "throughput": 186.9209853779003,
+      "usPerIter": 534.98541
+    },
+    {
+      "name": "simple: entities+getComponent",
+      "throughput": 30.958238818733168,
+      "usPerIter": 3230.15791
+    },
+    {
+      "name": "simple: forEach(pos_f64,vel_f64)",
+      "throughput": 13.815547348036677,
+      "usPerIter": 7238.222090000001
+    },
+    {
+      "name": "simple: batch(pos_f64,vel_f64)",
+      "throughput": 8.641776020751848,
+      "usPerIter": 11571.695420000002
+    },
+    {
+      "name": "sparse: forEach(Pos,sparse_tag)",
+      "throughput": 501.7309718528925,
+      "usPerIter": 199.31
+    },
+    {
+      "name": "sparse: batch(Pos,sparse_tag)",
+      "throughput": 124.21524380154445,
+      "usPerIter": 805.0541699999999
+    },
+    {
+      "name": "sparseF64: forEach(Pos,sparse_f64)",
+      "throughput": 24.634035718420623,
+      "usPerIter": 4059.42417
+    },
+    {
+      "name": "sparseF64: batch(Pos,sparse_f64)",
+      "throughput": 21.167039427050575,
+      "usPerIter": 4724.32625
+    },
+    {
+      "name": "real: forEach(Pos,Vel)",
+      "throughput": 255.17608744884515,
+      "usPerIter": 391.88625
+    },
+    {
+      "name": "real: batch(Pos,Vel)",
+      "throughput": 145.59802569077164,
+      "usPerIter": 686.8225
+    },
+    {
+      "name": "real: forEach(Pos,Size,Color)",
+      "throughput": 191.86416140165827,
+      "usPerIter": 521.20208
+    },
+    {
+      "name": "real: batch(Pos,Size,Color)",
+      "throughput": 107.9769307287498,
+      "usPerIter": 926.12375
+    },
+    {
+      "name": "spawn: ObjectColumn(Pos+Vel)",
+      "throughput": 1.521171667264994,
+      "usPerIter": 65738.8
+    },
+    {
+      "name": "spawn: Float64Column(pos_f64+vel_f64)",
+      "throughput": 1.4261320622762095,
+      "usPerIter": 70119.7334
+    },
+    {
+      "name": "destroy: table only (1c, Pos)",
+      "throughput": 170.239308801168,
+      "usPerIter": 58.74084
+    },
+    {
+      "name": "destroy: table (10c, rich entity)",
+      "throughput": 101.07901852273015,
+      "usPerIter": 98.9325
+    },
+    {
+      "name": "destroy: sparse only (sparse_tag)",
+      "throughput": 176.87638427880245,
+      "usPerIter": 56.536660000000005
+    },
+    {
+      "name": "spawn: Pos+Vel (remove baseline)",
+      "throughput": 1.7170066812644742,
+      "usPerIter": 5824.0891599999995
+    },
+    {
+      "name": "spawn: Pos+sparse_tag (remove baseline)",
+      "throughput": 1.8063494084883067,
+      "usPerIter": 5536.0275
+    },
+    {
+      "name": "removeComponent: table (remove Pos from Pos+Vel)",
+      "throughput": 1.4306821957681135,
+      "usPerIter": 6989.672500000001
+    },
+    {
+      "name": "removeComponent: sparse (remove sparse_tag from Pos+Tag)",
+      "throughput": 1.46637492609617,
+      "usPerIter": 6819.538320000001
+    },
+    {
+      "name": "filter: Changed(Pos).forEach",
+      "throughput": 48.6530209246961,
+      "usPerIter": 2055.37083
+    }
+  ]
+}

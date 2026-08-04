@@ -1,0 +1,33 @@
+id: rename-underscore-module
+language: TypeScript
+rule:
+  any:
+    - pattern: $_VAR
+      inside:
+        kind: program
+transform:
+  _VAR:
+    replace:
+      source: $_VAR
+      replace: '^_(.+)'
+      by: '$1'
+fix:
+  - 'generations'
+  - 'freeSlots'
+  - 'nextSlot'
+  - 'defaults'
+  - 'kindOrder'
+  - 'kindIds'
+  - 'kindBits'
+  - 'schemas'
+  - 'sparseKinds'
+  - 'sparseSets'
+  - 'archetypes'
+  - 'archetypeList'
+  - 'archetypeIndex'
+  - 'entityIndexMap'
+  - 'componentIndex'
+  - 'nextArchetypeId'
+  - 'entityCount'
+  - 'tick'
+  - 'lastChangedTick'
