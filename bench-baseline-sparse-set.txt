@@ -1,0 +1,13 @@
+# ECS Benchmark Baseline (sparse set)
+# Scale: 5000 entities
+# 2026-06-25T05:45:59.608Z
+
+spawn-1c: 5000 ops in 2.071ms = 2414.83 ops/ms
+spawn-3c: 5000 ops in 6.013ms = 831.55 ops/ms
+getComponent: 50000 ops in 0.951ms = 52560.1 ops/ms
+query-1c: 50000 ops in 1.231ms = 40632.5 ops/ms
+query-2c: 50000 ops in 1.953ms = 25607.11 ops/ms
+addComponent: 5000 ops in 0.633ms = 7894.22 ops/ms
+removeComponent: 5000 ops in 0.155ms = 32258.06 ops/ms
+destroy: 5000 ops in 0.061ms = 81412.01 ops/ms
+mixed: 7500 ops in 9.341ms = 802.89 ops/ms
