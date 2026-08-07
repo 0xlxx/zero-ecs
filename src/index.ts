@@ -40,3 +40,5 @@ export type { Query, QueryFilter } from "./query";
 export { SparseSetColumn } from "./storage";
 export { World } from "./world";
 export { Commands, EntityCommands } from "./commands";
+
+export { Events } from "./events.js";
