@@ -974,6 +974,69 @@ describe("Query archetype cache", () => {
     w.spawn([Position.create(), Velocity.create()]);
     w.query(Position).filter(With(Tag)).entities(); // 建立缓存（当前无匹配）
     const ok = w.spawn([Position.create(), Tag.create({ name: "y" })]);
-    expect(w.query(Position).filter(With(Tag)).entities()).toContain(ok);
+    const plain = w.spawn([Position.create()]); // 不含 Tag——With(Tag) 必须排除
+    const withTag = w.query(Position).filter(With(Tag)).entities();
+    expect(withTag).toContain(ok);
+    expect(withTag).not.toContain(plain);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// Query 缓存大世界测试（>16 archetype 强制走缓存路径）——
+// 变异测试发现：小世界走快速路径，缓存增量逻辑未被覆盖
+// ═══════════════════════════════════════════════════════════
+
+const qvarComps: ReturnType<typeof defineComponent>[] = [];
+for (let i = 0; i < 20; i++) qvarComps.push(defineComponent(`qvar${i}`, { v: 0 }));
+
+function bigWorld(): World {
+  const w = new World();
+  for (let i = 0; i < 20; i++) {
+    w.spawn([Position.create({ x: i }), qvarComps[i].create({ v: 1 })]);
+  }
+  return w;
+}
+
+describe("Query cache large-world (强制缓存路径)", () => {
+  it("大世界：增量 Without 排除——新增含 Tag 的 archetype 不加入候选", () => {
+    const w = bigWorld();
+    w.query(Position).filter(Without(Tag)).entities(); // 建立缓存（20 archetype > 16）
+    const excluded = w.spawn([Position.create(), Tag.create({ name: "t" })]);
+    expect(w.query(Position).filter(Without(Tag)).entities()).not.toContain(excluded);
+    expect(w.query(Position).entities()).toContain(excluded);
+  });
+
+  it("大世界：增量 With 纳入（With 组件已有 archetype 时缓存生效）", () => {
+    const w = bigWorld();
+    // 先让 Tag 有 archetype → With(Tag) 缓存可建立（computeCandidates 非 null）
+    const base = w.spawn([Position.create(), Tag.create({ name: "base" })]);
+    const before = w.query(Position).filter(With(Tag)).entities();
+    expect(before).toContain(base);
+    const ok = w.spawn([Position.create(), Tag.create({ name: "y" })]);
+    const plain = w.spawn([Position.create()]); // 不含 Tag——With(Tag) 必须排除
+    const withTag = w.query(Position).filter(With(Tag)).entities();
+    expect(withTag).toContain(ok);
+    expect(withTag).not.toContain(plain);
+  });
+
+  it("大世界：不同 Without 缓存隔离（cacheKey 含 without）", () => {
+    const w = bigWorld();
+    // 两个不同 Without 查询建立各自缓存
+    const noTag = w.query(Position).filter(Without(Tag)).entities();
+    const noHealth = w.query(Position).filter(Without(Health)).entities();
+    // 新增含 Tag 的 archetype：应只影响 noTag（排除），noHealth 应包含
+    const e = w.spawn([Position.create(), Tag.create({ name: "z" })]);
+    expect(w.query(Position).filter(Without(Tag)).entities()).not.toContain(e);
+    expect(w.query(Position).filter(Without(Health)).entities()).toContain(e);
+    expect(noTag.length).toBeGreaterThan(0);
+    expect(noHealth.length).toBeGreaterThan(0);
+  });
+
+  it("大世界：增量加入新 archetype（普通查询）", () => {
+    const w = bigWorld();
+    const before = w.query(Position).entities().length; // 20
+    const e = w.spawn([Position.create(), Health.create({ value: 1 })]);
+    expect(w.query(Position).entities()).toContain(e);
+    expect(w.query(Position).entities().length).toBe(before + 1);
   });
 });
