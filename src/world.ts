@@ -30,6 +30,10 @@ function _typeKey(kinds: string[]): string {
   return [...kinds].sort().join("\x00");
 }
 
+/** Query 候选缓存阈值：组件所在 archetype 数 ≤ 此值时交集很便宜，
+ *  直接算（避免缓存固定开销导致的负提升）；大于才走 Bevy QueryState 缓存。 */
+const CACHE_THRESHOLD = 16;
+
 export class World {
   private _tick = 0;
   private _entityCount = 0;
@@ -693,6 +697,21 @@ export class World {
         let cachedCandidates: Set<number> | null | undefined; // undefined=未算
         function getCandidates(): Set<number> | null {
           if (cachedCandidates !== undefined) return cachedCandidates;
+          // 小世界快速路径：交集很便宜（≤16 archetype），缓存命中的固定开销
+          // （cacheKey 构建 + Map.get）反而更大——跳过缓存避免负提升。
+          let smallestSize = Infinity;
+          for (const f of factories) {
+            const m = w._componentIndex.get(f.kind);
+            if (!m) {
+              cachedCandidates = null;
+              return null;
+            }
+            if (m.size < smallestSize) smallestSize = m.size;
+          }
+          if (smallestSize <= CACHE_THRESHOLD) {
+            cachedCandidates = computeCandidates(factories, withFilters, withoutFilters);
+            return cachedCandidates;
+          }
           const curGen = w._archetypeGeneration;
           const entry = w._queryCache.get(cacheKey);
           if (entry && entry.gen === curGen) {
