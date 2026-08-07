@@ -288,6 +288,24 @@ function runAll(): BenchResult[] {
     return { run() { let s = 0; w.query(Pos, Vel).filter(Changed(Pos)).forEach((p: any, v: any) => { s += p.x + v.dx; }); void s; } };
   }, N, iter));
 
+  // ── Story P0-04: 批量写 vs 逐实体（Float64 列级直写）──
+  console.log(`\n── 6. Batch write (Story P0-04): setComponents vs setComponent loop ──`);
+  const bwN = 10000, bwIter = 100;
+
+  results.push(bench("batch-write: setComponents(Float64) 10K", () => {
+    const w = new World();
+    const es: Entity[] = [];
+    for (let i = 0; i < bwN; i++) es.push(w.spawn([pos_f64.create({ x: i, y: 0, z: 0 })]));
+    return { run() { w.setComponents(pos_f64, es, { x: 1.5, y: 2.5, z: 3.5 }); } };
+  }, bwN, bwIter));
+
+  results.push(bench("batch-write: setComponent loop(Float64) 10K", () => {
+    const w = new World();
+    const es: Entity[] = [];
+    for (let i = 0; i < bwN; i++) es.push(w.spawn([pos_f64.create({ x: i, y: 0, z: 0 })]));
+    return { run() { for (const e of es) w.setComponent(e, pos_f64.create({ x: 1.5, y: 2.5, z: 3.5 })); } };
+  }, bwN, bwIter));
+
   // ── Query archetype cache: 多 archetype 稳态交集（computeCandidates 开销）──
   console.log(`\n── 5. Query cache: 多 archetype 稳态交集 ──`);
 

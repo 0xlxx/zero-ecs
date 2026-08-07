@@ -401,6 +401,70 @@ export class World {
     }
   }
 
+  /**
+   * 批量写组件（Story P0-04）：对多实体应用同 patch（或 per-entity patch 数组），
+   * 按 archetype 分组列级直写——Float64Column 数值字段 TypedArray 直写（零装箱）。
+   * 语义与逐实体 setComponent 一致（同 tick、触发 Changed）。跳过无此组件的实体。
+   * @returns 实际写入的实体数
+   */
+  setComponents<Data>(
+    factory: ComponentFactory<Data>,
+    entities: readonly Entity[],
+    patch: Partial<Data> | readonly Partial<Data>[],
+  ): number {
+    const kind = factory.kind;
+    const single = !Array.isArray(patch);
+    // 按 archetype 分组（同列可批量写）
+    const groups = new Map<number, { rows: number[]; values: Record<string, unknown>[] }>();
+    let written = 0;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (!this.isAlive(e)) continue;
+      const rec = this._entityIndex.get(e);
+      if (!rec) continue;
+      const colIdx = this._componentIndex.get(kind)?.get(rec.archetypeId);
+      if (colIdx === undefined) continue; // 实体无此组件——跳过（批量更新已有）
+      const p = (single ? patch : (patch as readonly Partial<Data>[])[i]) as Record<string, unknown>;
+      let g = groups.get(rec.archetypeId);
+      if (!g) {
+        g = { rows: [], values: [] };
+        groups.set(rec.archetypeId, g);
+      }
+      g.rows.push(rec.row);
+      g.values.push(p);
+      written++;
+    }
+    if (written === 0) return 0;
+
+    const tick = this._nextTick();
+    for (const [archId, g] of groups) {
+      const arch = this._archetypes.get(archId)!;
+      const colIdx = this._componentIndex.get(kind)!.get(archId)!;
+      const col = arch.columns[colIdx];
+      const isF64 = col.isFloat64 === true;
+      for (let i = 0; i < g.rows.length; i++) {
+        const row = g.rows[i];
+        const p = g.values[i];
+        if (isF64) {
+          // Float64 快路径：数值字段直写 TypedArray（零装箱）
+          const fcol = col as Float64Column;
+          for (const name of Object.keys(p)) {
+            const arr = fcol.field(name);
+            if (arr) arr[row] = p[name] as number;
+          }
+        } else {
+          const data = col.get(row) as Record<string, unknown>;
+          for (const name of Object.keys(p)) data[name] = p[name];
+          col.set(row, data);
+        }
+        arch.changedTicks[colIdx][row] = tick;
+        arch.masterChanged[row] = tick;
+        this._lastChangedTick.set(kind, tick);
+      }
+    }
+    return written;
+  }
+
   /** Read a component. O(1): entity_index → archetype + row → component_index → column[row].
    *  Mertens: two map lookups + one array access. */
   getComponent<Data>(entity: Entity, factory: ComponentFactory<Data>): Data | undefined {
