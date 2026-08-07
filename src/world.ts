@@ -40,6 +40,11 @@ export class World {
   private _componentIndex = new Map<string, Map<number, number>>(); // kind → (archetypeId → colIdx)
   private _archetypeIndex = new Map<string, number>(); // typeKey → archetypeId
   private _nextArchetypeId = 0;
+  /** Archetype 结构代际——新增 archetype 时 +1，用于 query 候选缓存失效。 */
+  private _archetypeGeneration = 0;
+  /** Query 候选缓存：key = factories+With+Without → { 代际, 匹配 archetype 集 }。
+   *  稳态（无新 archetype）下消除每次 query 的交集重算（Bevy QueryState 等价）。 */
+  private _queryCache = new Map<string, { gen: number; candidates: Set<number> }>();
 
   // ── Deferred command buffer ──
   private _commands: Array<() => void> = [];
@@ -671,9 +676,50 @@ export class World {
         const changedFilters = filters.filter((f) => f.kind === "changed");
         const addedFilters = filters.filter((f) => f.kind === "added");
 
+        // ── Query 候选缓存（Bevy QueryState 等价）──
+        // key = factories + With + Without（Changed/Added 是行级，不影响 archetype 候选）
+        const cacheKey =
+          factories.map((f) => f.kind).join(",") +
+          "|w:" + withFilters.map((f) => f.factory.kind).join(",") +
+          "|o:" + withoutFilters.map((f) => f.factory.kind).join(",");
+        // 单个新 archetype 是否匹配本查询（Bevy QueryState::new_archetype 等价）
+        function matchesArchetype(arch: Archetype): boolean {
+          const kinds = arch.type;
+          for (const f of factories) if (!kinds.includes(f.kind)) return false;
+          for (const f of withFilters) if (!kinds.includes(f.factory.kind)) return false;
+          for (const f of withoutFilters) if (kinds.includes(f.factory.kind)) return false;
+          return true;
+        }
+        let cachedCandidates: Set<number> | null | undefined; // undefined=未算
+        function getCandidates(): Set<number> | null {
+          if (cachedCandidates !== undefined) return cachedCandidates;
+          const curGen = w._archetypeGeneration;
+          const entry = w._queryCache.get(cacheKey);
+          if (entry && entry.gen === curGen) {
+            cachedCandidates = entry.candidates;
+            return cachedCandidates;
+          }
+          if (entry) {
+            // 增量：只扫描 new_since(entry.gen) 的新 archetype（Bevy update_archetypes
+            // `&archetypes[old_generation..]` 模式）——匹配则加入候选，不重算全部。
+            for (let i = entry.gen; i < curGen; i++) {
+              const arch = w._archetypes.get(i);
+              if (arch && matchesArchetype(arch)) entry.candidates.add(arch.id);
+            }
+            entry.gen = curGen;
+            cachedCandidates = entry.candidates;
+            return cachedCandidates;
+          }
+          // 首次：全量交集（含组件 kind 未知 → null 不缓存）
+          const r = computeCandidates(factories, withFilters, withoutFilters);
+          if (r !== null) w._queryCache.set(cacheKey, { gen: curGen, candidates: r });
+          cachedCandidates = r;
+          return r;
+        }
+
         return {
           forEach(callback: (...data: unknown[]) => void): void {
-            const candidate = computeCandidates(factories, withFilters, withoutFilters);
+            const candidate = getCandidates();
             if (!candidate || candidate.size === 0) return;
             const n = factories.length;
             const needAlive = aliveCheck();
@@ -798,7 +844,7 @@ export class World {
           },
 
           batch(callback: (...cols: unknown[]) => void): void {
-            const candidate = computeCandidates(factories, withFilters, withoutFilters);
+            const candidate = getCandidates();
             if (!candidate || candidate.size === 0) return;
             const n = factories.length;
             const needAlive = aliveCheck();
@@ -895,7 +941,7 @@ export class World {
           },
 
           entities(): Entity[] {
-            const candidate = computeCandidates(factories, withFilters, withoutFilters);
+            const candidate = getCandidates();
             if (!candidate || candidate.size === 0) return [];
             const needAlive = aliveCheck();
             const gens = getGenerations();
@@ -963,7 +1009,7 @@ export class World {
           },
 
           first(): Entity | undefined {
-            const candidate = computeCandidates(factories, withFilters, withoutFilters);
+            const candidate = getCandidates();
             if (!candidate || candidate.size === 0) return undefined;
             const needAlive = aliveCheck();
             const gens = getGenerations();
@@ -1159,6 +1205,7 @@ export class World {
     }
     this._archetypes.set(archId, arch);
     this._archetypeIndex.set(key, archId);
+    this._archetypeGeneration++; // 结构变化 → 失效 query 缓存
 
     // Register in component index
     for (let ci = 0; ci < kinds.length; ci++) {

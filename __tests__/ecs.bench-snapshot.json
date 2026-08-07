@@ -1,121 +1,136 @@
 {
-  "timestamp": "2026-08-03T20:47:28.537Z",
-  "runtime": "Bun 1.3.4",
+  "timestamp": "2026-08-07T04:42:36.345Z",
+  "runtime": "Bun 1.3.14",
   "results": [
     {
       "name": "simple: forEach(Pos,Vel)",
-      "throughput": 508.77100868126155,
-      "usPerIter": 196.55208
+      "throughput": 477.2652775956215,
+      "usPerIter": 209.52708
     },
     {
       "name": "simple: batch(Pos,Vel)",
-      "throughput": 186.9209853779003,
-      "usPerIter": 534.98541
+      "throughput": 186.26468562004217,
+      "usPerIter": 536.87042
     },
     {
       "name": "simple: entities+getComponent",
-      "throughput": 30.958238818733168,
-      "usPerIter": 3230.15791
+      "throughput": 25.81595075020856,
+      "usPerIter": 3873.57417
     },
     {
       "name": "simple: forEach(pos_f64,vel_f64)",
-      "throughput": 13.815547348036677,
-      "usPerIter": 7238.222090000001
+      "throughput": 19.90085065847825,
+      "usPerIter": 5024.91083
     },
     {
       "name": "simple: batch(pos_f64,vel_f64)",
-      "throughput": 8.641776020751848,
-      "usPerIter": 11571.695420000002
+      "throughput": 10.768575201566351,
+      "usPerIter": 9286.27958
     },
     {
       "name": "sparse: forEach(Pos,sparse_tag)",
-      "throughput": 501.7309718528925,
-      "usPerIter": 199.31
+      "throughput": 501.38402045005034,
+      "usPerIter": 199.44792
     },
     {
       "name": "sparse: batch(Pos,sparse_tag)",
-      "throughput": 124.21524380154445,
-      "usPerIter": 805.0541699999999
+      "throughput": 199.79071922161538,
+      "usPerIter": 500.52374999999995
     },
     {
       "name": "sparseF64: forEach(Pos,sparse_f64)",
-      "throughput": 24.634035718420623,
-      "usPerIter": 4059.42417
+      "throughput": 34.646903343104995,
+      "usPerIter": 2886.2608299999997
     },
     {
       "name": "sparseF64: batch(Pos,sparse_f64)",
-      "throughput": 21.167039427050575,
-      "usPerIter": 4724.32625
+      "throughput": 28.780032413511506,
+      "usPerIter": 3474.63125
     },
     {
       "name": "real: forEach(Pos,Vel)",
-      "throughput": 255.17608744884515,
-      "usPerIter": 391.88625
+      "throughput": 332.45739674820766,
+      "usPerIter": 300.79042
     },
     {
       "name": "real: batch(Pos,Vel)",
-      "throughput": 145.59802569077164,
-      "usPerIter": 686.8225
+      "throughput": 147.95772108120104,
+      "usPerIter": 675.86875
     },
     {
       "name": "real: forEach(Pos,Size,Color)",
-      "throughput": 191.86416140165827,
-      "usPerIter": 521.20208
+      "throughput": 204.21412594444695,
+      "usPerIter": 489.68209
     },
     {
       "name": "real: batch(Pos,Size,Color)",
-      "throughput": 107.9769307287498,
-      "usPerIter": 926.12375
+      "throughput": 105.91747704569677,
+      "usPerIter": 944.13125
     },
     {
       "name": "spawn: ObjectColumn(Pos+Vel)",
-      "throughput": 1.521171667264994,
-      "usPerIter": 65738.8
+      "throughput": 1.4185298422534671,
+      "usPerIter": 70495.5208
     },
     {
       "name": "spawn: Float64Column(pos_f64+vel_f64)",
-      "throughput": 1.4261320622762095,
-      "usPerIter": 70119.7334
+      "throughput": 1.5474808712098183,
+      "usPerIter": 64621.154200000004
     },
     {
       "name": "destroy: table only (1c, Pos)",
-      "throughput": 170.239308801168,
-      "usPerIter": 58.74084
+      "throughput": 166.83116219258858,
+      "usPerIter": 59.94084
     },
     {
       "name": "destroy: table (10c, rich entity)",
-      "throughput": 101.07901852273015,
-      "usPerIter": 98.9325
+      "throughput": 100.20459774768122,
+      "usPerIter": 99.79582
     },
     {
       "name": "destroy: sparse only (sparse_tag)",
-      "throughput": 176.87638427880245,
-      "usPerIter": 56.536660000000005
+      "throughput": 173.61111111111114,
+      "usPerIter": 57.6
     },
     {
       "name": "spawn: Pos+Vel (remove baseline)",
-      "throughput": 1.7170066812644742,
-      "usPerIter": 5824.0891599999995
+      "throughput": 1.7363294063025814,
+      "usPerIter": 5759.27584
     },
     {
       "name": "spawn: Pos+sparse_tag (remove baseline)",
-      "throughput": 1.8063494084883067,
-      "usPerIter": 5536.0275
+      "throughput": 1.8659083615085497,
+      "usPerIter": 5359.320000000001
     },
     {
       "name": "removeComponent: table (remove Pos from Pos+Vel)",
-      "throughput": 1.4306821957681135,
-      "usPerIter": 6989.672500000001
+      "throughput": 1.4119803249126566,
+      "usPerIter": 7082.25166
     },
     {
       "name": "removeComponent: sparse (remove sparse_tag from Pos+Tag)",
-      "throughput": 1.46637492609617,
-      "usPerIter": 6819.538320000001
+      "throughput": 1.4860848571929814,
+      "usPerIter": 6729.090840000001
     },
     {
       "name": "filter: Changed(Pos).forEach",
-      "throughput": 48.6530209246961,
-      "usPerIter": 2055.37083
+      "throughput": 49.71522497692903,
+      "usPerIter": 2011.4562500000002
+    },
+    {
+      "name": "query-cache: 40 arch × 25 ent (Pos,Vel) forEach",
+      "throughput": 145.9677148608271,
+      "usPerIter": 6.850829999999999
+    },
+    {
+      "name": "query-cache-empty: 60 arch (Pos,Vel) 交集开销",
+      "throughput": 10.983145265275907,
+      "usPerIter": 5.462916
+    },
+    {
+      "name": "query-cache-without: 60 arch (Pos,Vel,Without variant0)",
+      "throughput": 10.672358591248665,
+      "usPerIter": 5.622
     }
   ]
 }

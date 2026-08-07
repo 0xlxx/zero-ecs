@@ -924,3 +924,56 @@ describe("defineResource", () => {
     expect(world.resourceChanged(DataStore)).toBe(false); // SysB second access
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// Query archetype 缓存（Bevy QueryState 等价）——增量匹配正确性
+// ═══════════════════════════════════════════════════════════
+
+describe("Query archetype cache", () => {
+  it("稳态：重复 query 结果一致（缓存命中不改变语义）", () => {
+    const w = new World();
+    const a = w.spawn([Position.create({ x: 1 }), Velocity.create({ dx: 1 })]);
+    const b = w.spawn([Position.create({ x: 2 }), Velocity.create({ dx: 2 })]);
+    expect(w.query(Position, Velocity).entities()).toEqual([a, b]);
+    expect(w.query(Position, Velocity).entities()).toEqual([a, b]);
+  });
+
+  it("增量：新增 archetype 后 query 包含新实体（Bevy update_archetypes）", () => {
+    const w = new World();
+    w.spawn([Position.create({ x: 1 }), Velocity.create({ dx: 1 })]);
+    const before = w.query(Position, Velocity).entities().length; // 建立缓存
+    // 新 archetype：Position+Velocity+Health
+    const c = w.spawn([Position.create({ x: 3 }), Velocity.create({ dx: 3 }), Health.create({ value: 10 })]);
+    const after = w.query(Position, Velocity).entities();
+    expect(after).toContain(c);
+    expect(after.length).toBe(before + 1);
+  });
+
+  it("增量 + Without：新增 archetype 含被排除组件则不加入候选", () => {
+    const w = new World();
+    w.spawn([Position.create(), Velocity.create()]);
+    w.query(Position).filter(Without(Tag)).entities(); // 建立缓存
+    const excluded = w.spawn([Position.create(), Tag.create({ name: "t" })]);
+    expect(w.query(Position).filter(Without(Tag)).entities()).not.toContain(excluded);
+    // 不带 Without 的普通 query 应包含
+    expect(w.query(Position).entities()).toContain(excluded);
+  });
+
+  it("缓存按查询独立：不同 factories 增量互不干扰", () => {
+    const w = new World();
+    w.spawn([Position.create(), Velocity.create(), Health.create()]);
+    w.query(Position).entities(); // 缓存 A
+    w.query(Position, Velocity).entities(); // 缓存 B
+    const t = w.spawn([Position.create(), Tag.create({ name: "t" })]);
+    expect(w.query(Position).entities()).toContain(t); // A 增量加入
+    expect(w.query(Position, Velocity).entities()).not.toContain(t); // B 不加入（缺 Velocity）
+  });
+
+  it("With 增量：新增 archetype 满足 With 则加入", () => {
+    const w = new World();
+    w.spawn([Position.create(), Velocity.create()]);
+    w.query(Position).filter(With(Tag)).entities(); // 建立缓存（当前无匹配）
+    const ok = w.spawn([Position.create(), Tag.create({ name: "y" })]);
+    expect(w.query(Position).filter(With(Tag)).entities()).toContain(ok);
+  });
+});

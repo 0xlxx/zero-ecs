@@ -33,6 +33,9 @@ const Alpha = defineComponent("bnAlpha", { value: 1 });
 const Speed = defineComponent("bnSpeed", { value: 1 });
 const Rot   = defineComponent("bnRot",   { angle: 0 });
 const Scale = defineComponent("bnScale", { x: 1, y: 1 });
+// Query cache 专项：60 个变体组件 → 60 archetype（Pos+Vel+variant）
+const varComps: any[] = [];
+for (let i = 0; i < 60; i++) varComps.push(defineComponent(`bnVar${i}`, { v: 0 }));
 
 // ── Benchmark harness ──
 interface BenchResult {
@@ -284,6 +287,32 @@ function runAll(): BenchResult[] {
     w.setCurrentObserver("bench");
     return { run() { let s = 0; w.query(Pos, Vel).filter(Changed(Pos)).forEach((p: any, v: any) => { s += p.x + v.dx; }); void s; } };
   }, N, iter));
+
+  // ── Query archetype cache: 多 archetype 稳态交集（computeCandidates 开销）──
+  console.log(`\n── 5. Query cache: 多 archetype 稳态交集 ──`);
+
+  results.push(bench("query-cache: 40 arch × 25 ent (Pos,Vel) forEach", () => {
+    const w = new World();
+    for (let vi = 0; vi < 40; vi++) {
+      for (let i = 0; i < 25; i++) w.spawn([Pos.create({ x: i }), Vel.create({ dx: 1 }), varComps[vi].create({ v: 1 })]);
+    }
+    return { run() { let s = 0; w.query(Pos, Vel).forEach((p: any, v: any) => { s += p.x + v.dx; }); void s; } };
+  }, 1000, 100));
+
+  // 纯交集开销：60 archetype 各 1 实体（遍历极小，交集计算是主开销），高迭代放大
+  results.push(bench("query-cache-empty: 60 arch (Pos,Vel) 交集开销", () => {
+    const w = new World();
+    for (let vi = 0; vi < 60; vi++) w.spawn([Pos.create({ x: 1 }), Vel.create({ dx: 1 }), varComps[vi].create({ v: 1 })]);
+    return { run() { let s = 0; w.query(Pos, Vel).forEach((p: any, v: any) => { s += p.x + v.dx; }); void s; } };
+  }, 60, 500));
+
+  // 有 Without 过滤的稳态交集（含 archetype 级过滤）
+  results.push(bench("query-cache-without: 60 arch (Pos,Vel,Without variant0)", () => {
+    const w = new World();
+    for (let vi = 0; vi < 60; vi++) w.spawn([Pos.create({ x: 1 }), Vel.create({ dx: 1 }), varComps[vi].create({ v: 1 })]);
+    const { Without } = require("../src/index.js");
+    return { run() { let s = 0; w.query(Pos, Vel).filter(Without(varComps[0])).forEach((p: any, v: any) => { s += p.x + v.dx; }); void s; } };
+  }, 60, 500));
 
   return results;
 }
