@@ -65,8 +65,10 @@ export class World {
 
   // ── Deferred destroy batching ──
   private _deferredDestroys: Entity[] = [];
-  /** Entities killed since last drainKilled() call. Populated by _flushDestroys. */
+  /** Entities killed this frame. Populated by _flushDestroys; reset at frame end (setCurrentObserver(null)). */
   private _killedThisFrame: Entity[] = [];
+  /** Per-observer consumed count into _killedThisFrame (Bevy RemovedComponents 多读者游标). */
+  private _killedCursor = new Map<string, number>();
 
   // ── Before-destroy hooks (Johnson §3.2 p53: "finalizer or destruction callback system") ──
   /** Entities currently being destroyed — prevents re-entrant cascade loops. */
@@ -1195,9 +1197,16 @@ export class World {
     return this._lastChangedTick.get(kind) ?? 0;
   }
 
+  /**
+   * Killed entities unseen by THIS observer (system). Bevy RemovedComponents 等价——
+   * 多读者：每个 observer 独立游标，都看到本帧全部 kill（不再单消费者）。
+   * 帧末 setCurrentObserver(null) 重置队列与游标。
+   */
   drainKilled(): Entity[] {
-    const result = this._killedThisFrame;
-    this._killedThisFrame = [];
+    const observer = this._currentObserver ?? "__global__";
+    const cursor = this._killedCursor.get(observer) ?? 0;
+    const result = this._killedThisFrame.slice(cursor);
+    this._killedCursor.set(observer, this._killedThisFrame.length);
     return result;
   }
 
@@ -1210,6 +1219,12 @@ export class World {
   }
 
   setCurrentObserver(name: string | null): void {
+    if (name === null) {
+      // 帧边界：重置 killed 队列与全部游标（Bevy RemovedComponents 帧语义）。
+      // hasKilledEntities 本帧保持 true——各系统独立消费，不因单消费者清空而漏清理。
+      this._killedThisFrame = [];
+      this._killedCursor.clear();
+    }
     this._currentObserver = name;
   }
 
