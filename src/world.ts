@@ -1266,11 +1266,13 @@ export class World {
   //  Debug / tooling
   // ═══════════════════════════════════════════════════════════
 
-  _debugKinds(): string[] {
+  /** Registered component kinds (insertion order) — entity introspection (Bevy archetype/components 等价). */
+  kinds(): string[] {
     return _kindOrder.slice();
   }
 
-  _debugGetComponentRaw(entity: Entity, kind: string): Record<string, unknown> | undefined {
+  /** Raw component data for an entity+kind (shallow copy — value-type introspection). */
+  componentData(entity: Entity, kind: string): Record<string, unknown> | undefined {
     const data = this._getComponentRaw(entity, kind);
     return data ? { ...data } : undefined;
   }
