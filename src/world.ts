@@ -14,7 +14,7 @@ import {
   INDEX_MASK,
 } from "./entity";
 import { _defaults, _kindOrder, _kindIds, _kindBits, _schemas, _sparseKinds } from "./component";
-import type { ComponentFactory, ResourceFactory, DataOf } from "./component";
+import type { ComponentFactory, ResourceFactory } from "./component";
 import type { Component } from "./component";
 import { ObjectColumn, Float64Column } from "./storage";
 import type { Column } from "./storage";
@@ -266,17 +266,14 @@ export class World {
    * - ResourceFactory → stored as component on a dedicated singleton entity (tick-tracked).
    * - ComponentFactory → fallback _resources map (backward compat).
    */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  insertResource<F extends ComponentFactory<unknown> | ResourceFactory<any>>(
-    factory: F,
-    data: DataOf<F>,
-  ): void {
+  insertResource<D>(factory: ResourceFactory<D>, data: D): void;
+  insertResource<D>(factory: ComponentFactory<D>, data: D): void;
+  insertResource<D>(factory: ResourceFactory<D> | ComponentFactory<D>, data: D): void {
     if ("_comp" in factory) {
       // ResourceFactory — entity-based storage with automatic tick tracking
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-      const rf = factory as ResourceFactory<any>;
+      const rf = factory;
       const entity = this._resourceEntities.get(rf.kind);
-      const comp = rf._comp({ _value: data } as unknown as { _value: unknown });
+      const comp = rf._comp({ _value: data });
       if (entity && this.isAlive(entity)) {
         this.setComponent(entity, comp);
       } else {
@@ -289,24 +286,18 @@ export class World {
   }
 
   /** Read a world resource. Returns undefined if the resource hasn't been inserted. */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  resource<F extends ComponentFactory<unknown> | ResourceFactory<any>>(
-    factory: F,
-  ): DataOf<F> | undefined {
+  resource<D>(factory: ResourceFactory<D> | ComponentFactory<D>): D | undefined {
     if ("_comp" in factory) {
       const entity = this._resourceEntities.get(factory.kind);
       if (!entity) return undefined;
       const comp = this.getComponent(entity, factory._comp);
-      return comp?._value as DataOf<F> | undefined;
+      return comp?._value;
     }
-    return this._resources.get(factory.kind) as DataOf<F> | undefined;
+    return this._resources.get(factory.kind) as D | undefined;
   }
 
   /** Remove a world resource. No-op if it doesn't exist. */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  removeResource<F extends ComponentFactory<unknown> | ResourceFactory<any>>(
-    factory: F,
-  ): void {
+  removeResource<D>(factory: ResourceFactory<D> | ComponentFactory<D>): void {
     if ("_comp" in factory) {
       const entity = this._resourceEntities.get(factory.kind);
       if (entity) {
@@ -319,10 +310,7 @@ export class World {
   }
 
   /** Check whether a world resource has been inserted. */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  hasResource<F extends ComponentFactory<unknown> | ResourceFactory<any>>(
-    factory: F,
-  ): boolean {
+  hasResource<D>(factory: ResourceFactory<D> | ComponentFactory<D>): boolean {
     if ("_comp" in factory) {
       const entity = this._resourceEntities.get(factory.kind);
       return entity !== undefined && this.isAlive(entity);
@@ -339,8 +327,7 @@ export class World {
    * if (!world.resourceChanged(DataStore)) return; // skip work if unchanged
    * ```
    */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  resourceChanged<F extends ResourceFactory<any>>(factory: F): boolean {
+  resourceChanged<D>(factory: ResourceFactory<D>): boolean {
     const entity = this._resourceEntities.get(factory.kind);
     if (!entity) return false;
     const entry = this._getComponentEntryRaw(entity, factory.kind);
@@ -361,8 +348,7 @@ export class World {
    * Manually bump a resource's changedTick without changing its data.
    * Needed when the resource data is mutated in-place (e.g. Map.set()) without going through setComponent.
    */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  markResourceChanged<F extends ResourceFactory<any>>(factory: F): void {
+  markResourceChanged<D>(factory: ResourceFactory<D>): void {
     const entity = this._resourceEntities.get(factory.kind);
     if (!entity) return;
     const raw = this._getComponentRaw(entity, factory.kind);

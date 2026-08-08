@@ -12,7 +12,7 @@
 
 import type { Entity } from "./entity";
 import type { World } from "./world";
-import type { Component, ComponentFactory, ResourceFactory, DataOf } from "./component";
+import type { Component, ComponentFactory, ResourceFactory } from "./component";
 
 export class EntityCommands {
   private _world: World;
@@ -116,16 +116,14 @@ export class Commands {
   }
 
   /** Queue a resource insert. Applied during flush. */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  insertResource<F extends ResourceFactory<any>>(factory: F, data: DataOf<F>): void {
+  insertResource<D>(factory: ResourceFactory<D>, data: D): void {
     this._world._enqueue(() => {
       this._world.insertResource(factory, data);
     });
   }
 
   /** Queue a resource removal. Applied during flush. */
-  // oxlint-disable-next-line typescript/no-explicit-any -- 泛型约束方法逆变必要
-  removeResource<F extends ResourceFactory<any>>(factory: F): void {
+  removeResource<D>(factory: ResourceFactory<D>): void {
     this._world._enqueue(() => {
       this._world.removeResource(factory);
     });
