@@ -63,7 +63,7 @@ export const _fieldMeta = new Map<string, Record<string, FieldDesc>>();
 /** True when a value table is a field descriptor table (all values are FieldDesc). */
 function isFieldTable(v: unknown): v is Record<string, FieldDesc> {
   if (typeof v !== "object" || v === null) return false;
-  const vals = Object.values(v as Record<string, unknown>);
+  const vals = Object.values(v);
   // Field mode is the ONLY mode: an empty table is a zero-field component
   // (e.g. uiNode). Raw default objects are rejected with a clear error.
   return vals.every(

@@ -56,8 +56,8 @@ export class EntityCommands {
         return;
       }
       // Shallow compare — strip the 'type' key and compare the data fields
-      const { type: _, ...newFields } = component as Record<string, unknown>;
-      const { type: __, ...oldFields } = existing as Record<string, unknown>;
+      const { type: _, ...newFields } = component;
+      const { type: __, ...oldFields } = existing;
       if (JSON.stringify(newFields) !== JSON.stringify(oldFields)) {
         this._world.addComponent(entity, component);
       }
