@@ -15,7 +15,5 @@ export interface Archetype {
   entities: Entity[]; // entity at each row — maintained during swap-and-pop
   addedTicks: number[][]; // addedTicks[col][row]
   changedTicks: number[][]; // changedTicks[col][row]
-  masterChanged: number[]; // max changed tick per row — O(1) filter shortcut
-  masterAdded: number[]; // max added tick per row
 }
 

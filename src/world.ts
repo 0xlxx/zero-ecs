@@ -92,8 +92,6 @@ export class World {
   // Per-observer per-entity per-kind last-seen ticks
   private _seenAdded = new Map<string, Map<Entity, Map<string, number>>>();
   private _seenChanged = new Map<string, Map<Entity, Map<string, number>>>();
-  private _seenAddedMaster = new Map<string, Map<Entity, number>>();
-  private _seenChangedMaster = new Map<string, Map<Entity, number>>();
 
   // ══════════════════════════════════════════════════
   //  Public API — Entity lifecycle
@@ -141,8 +139,6 @@ export class World {
       arch.changedTicks[ci].push(tick);
       this._lastChangedTick.set(kind, tick);
     }
-    arch.masterChanged.push(tick);
-    arch.masterAdded.push(tick);
     this._entityIndex.set(entity, { archetypeId: arch.id, row });
 
     for (const kind of kinds) {
@@ -458,7 +454,6 @@ export class World {
           col.set(row, data);
         }
         arch.changedTicks[colIdx][row] = tick;
-        arch.masterChanged[row] = tick;
         this._lastChangedTick.set(kind, tick);
       }
     }
@@ -846,26 +841,11 @@ export class World {
                   const e = ents[row];
                   if (needAlive && !isAliveFast(e, gens)) continue;
 
-                  // Fast path: master tick — skip if nothing changed since last check
-                  if (
-                    (changedFilters.length > 0 &&
-                      arch.masterChanged[row] <=
-                        w._getLastSeenMaster(w._seenChangedMaster, e)) ||
-                    (addedFilters.length > 0 &&
-                      arch.masterAdded[row] <= w._getLastSeenMaster(w._seenAddedMaster, e))
-                  ) {
-                    const mtC = arch.masterChanged[row],
-                      mtA = arch.masterAdded[row];
-                    if (changedFilters.length > 0 && mtC > 0)
-                      w._setLastSeenMaster(w._seenChangedMaster, e, mtC);
-                    if (addedFilters.length > 0 && mtA > 0)
-                      w._setLastSeenMaster(w._seenAddedMaster, e, mtA);
-                    continue;
-                  }
-
                   // Changed: ANY specified component changed (OR)
+                  // 按 kind 精确判断（consumption lastSeen）——不做 master 标量快路径：
+                  // master = 全组件 max tick，被任一 Changed 查询消费后会使同 observer
+                  // 的其他 Changed 查询（不同 kind）被错误跳过（P2-03 修复）。
                   if (changedFilters.length > 0) {
-                    w._setLastSeenMaster(w._seenChangedMaster, e, arch.masterChanged[row]);
                     let anyChanged = false;
                     for (let fi = 0; fi < changedFilters.length; fi++) {
                       const ci = changedColIdxs[fi];
@@ -1096,9 +1076,53 @@ export class World {
             if (!candidate || candidate.size === 0) return undefined;
             const needAlive = aliveCheck();
             const gens = getGenerations();
+            const hasRowFilters = changedFilters.length > 0 || addedFilters.length > 0;
             for (const archId of candidate) {
               const arch = w._archetypes.get(archId)!;
               const ents = arch.entities;
+              // 行级过滤器（Changed/Added）——first() 也必须遵守（回归：此前直接返回首个实体）
+              if (hasRowFilters) {
+                const changedColIdxs = changedFilters.map((f) =>
+                  w._componentIndex.get(f.factory.kind)?.get(archId),
+                );
+                const addedColIdxs = addedFilters.map((f) =>
+                  w._componentIndex.get(f.factory.kind)?.get(archId),
+                );
+                for (let row = 0; row < ents.length; row++) {
+                  const e = ents[row];
+                  if (needAlive && !isAliveFast(e, gens)) continue;
+                  // OR 语义与 forEach/entities 一致：任一 Changed 命中 + 任一 Added 命中
+                  let anyChanged = true;
+                  if (changedFilters.length > 0) {
+                    anyChanged = false;
+                    for (let fi = 0; fi < changedFilters.length; fi++) {
+                      const ci = changedColIdxs[fi];
+                      if (ci === undefined) continue;
+                      const tick = arch.changedTicks[ci][row];
+                      if (tick > w._getLastSeenChanged(e, changedFilters[fi].factory.kind)) {
+                        anyChanged = true;
+                        w._setLastSeenChanged(e, changedFilters[fi].factory.kind, tick);
+                      }
+                    }
+                  }
+                  if (!anyChanged) continue;
+                  let anyAdded = true;
+                  if (addedFilters.length > 0) {
+                    anyAdded = false;
+                    for (let fi = 0; fi < addedFilters.length; fi++) {
+                      const ci = addedColIdxs[fi];
+                      if (ci === undefined) continue;
+                      const tick = arch.addedTicks[ci][row];
+                      if (tick > w._getLastSeenAdded(e, addedFilters[fi].factory.kind)) {
+                        anyAdded = true;
+                        w._setLastSeenAdded(e, addedFilters[fi].factory.kind, tick);
+                      }
+                    }
+                  }
+                  if (anyAdded) return e;
+                }
+                continue;
+              }
               if (!needAlive) {
                 if (ents.length > 0) return ents[0];
               } else {
@@ -1278,8 +1302,6 @@ export class World {
       entities: [],
       addedTicks: [],
       changedTicks: [],
-      masterChanged: [],
-      masterAdded: [],
     };
     // Initialize tick arrays per column
     for (let ci = 0; ci < kinds.length; ci++) {
@@ -1360,8 +1382,6 @@ export class World {
       arch.entities.push(entity);
       arch.addedTicks[0].push(tick);
       arch.changedTicks[0].push(tick);
-      arch.masterAdded.push(tick);
-      arch.masterChanged.push(tick);
       this._entityIndex.set(entity, { archetypeId: arch.id, row: arch.entities.length - 1 });
       this._lastChangedTick.set(kind, tick);
       return;
@@ -1375,7 +1395,6 @@ export class World {
       // Update — component kind already present
       oldArch.columns[existingColIdx].set(rec.row, data);
       oldArch.changedTicks[existingColIdx][rec.row] = tick;
-      if (oldArch.masterChanged[rec.row] < tick) oldArch.masterChanged[rec.row] = tick;
       this._lastChangedTick.set(kind, tick);
       return;
     }
@@ -1550,25 +1569,6 @@ export class World {
         ?.get(entity)
         ?.get(kind) ?? 0
     );
-  }
-  private _getLastSeenMaster(
-    map: Map<string, Map<Entity, number>>,
-    entity: Entity,
-  ): number {
-    return map.get(this._currentObserver ?? "__")?.get(entity) ?? 0;
-  }
-  private _setLastSeenMaster(
-    map: Map<string, Map<Entity, number>>,
-    entity: Entity,
-    tick: number,
-  ): void {
-    const key = this._currentObserver ?? "__";
-    let obs = map.get(key);
-    if (!obs) {
-      obs = new Map();
-      map.set(key, obs);
-    }
-    obs.set(entity, Math.max(tick, obs.get(entity) ?? 0));
   }
   private _setLastSeenAdded(entity: Entity, kind: string, tick: number): void {
     const key = this._currentObserver ?? "__";
