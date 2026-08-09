@@ -125,12 +125,12 @@ export function defineComponent<const Kind extends string, F extends Record<stri
   fields: F,
   opts?: { schema?: FieldSchema; storage?: "sparse" },
 ): ComponentFactory<FieldsToData<F>, Kind>;
-export function defineComponent<Data, const Kind extends string = string>(
+export function defineComponent<Data extends Record<string, unknown>, const Kind extends string = string>(
   kind: Kind,
   defaults: Data,
   opts?: { schema?: FieldSchema; storage?: "sparse" },
 ): ComponentFactory<Data, Kind>;
-export function defineComponent<Data, const Kind extends string = string>(
+export function defineComponent<Data extends Record<string, unknown>, const Kind extends string = string>(
   kind: Kind,
   defaults: Data | Record<string, FieldDesc>,
   opts?: { schema?: FieldSchema; storage?: "sparse" },
@@ -149,7 +149,7 @@ export function defineComponent<Data, const Kind extends string = string>(
   // Field mode: descriptor table → defaults + meta registry（isFieldTable 类型守卫内联收窄）。
   const dataDefaults: Record<string, unknown> = isFieldTable(defaults)
     ? defaultsFromFields(defaults)
-    : (defaults as Record<string, unknown>);
+    : defaults;
   if (isFieldTable(defaults)) _fieldMeta.set(kind, defaults);
 
   _defaults.set(kind, dataDefaults);
@@ -161,13 +161,13 @@ export function defineComponent<Data, const Kind extends string = string>(
     if (overrides) {
       // Merge defaults with overrides, but undefined values in overrides
       // do NOT override defaults — a missing field means "use the default".
-      data = { ...(dataDefaults as Record<string, unknown>) } as Data;
+      data = { ...dataDefaults } as Data;
       for (const key of Object.keys(overrides) as (keyof Data)[]) {
         const value = overrides[key];
         if (value !== undefined) data[key] = value;
       }
     } else {
-      data = { ...(dataDefaults as Record<string, unknown>) } as Data;
+      data = { ...dataDefaults } as Data;
     }
     return { type: kind, ...data };
   }
