@@ -105,7 +105,7 @@ export interface ResourceFactory<Data, Kind extends string = string> {
 export function defineResource<Data = unknown>(kind: string): ResourceFactory<Data, string> {
   // The component stores { _value: Data } — shallow copy keeps the _value reference alive
   const _comp = defineComponent(kind, { _value: undefined as unknown as Data });
-  return { kind, _comp } as ResourceFactory<Data, string>;
+  return { kind, _comp };
 }
 
 /**
@@ -146,12 +146,11 @@ export function defineComponent<Data, const Kind extends string = string>(
   _kindIds.set(kind, id);
   _kindBits.set(kind, bit);
 
-  // Field mode: descriptor table → defaults + meta registry.
-  const fieldMode = isFieldTable(defaults);
-  const dataDefaults = fieldMode
-    ? defaultsFromFields(defaults as Record<string, FieldDesc>)
+  // Field mode: descriptor table → defaults + meta registry（isFieldTable 类型守卫内联收窄）。
+  const dataDefaults: Record<string, unknown> = isFieldTable(defaults)
+    ? defaultsFromFields(defaults)
     : (defaults as Record<string, unknown>);
-  if (fieldMode) _fieldMeta.set(kind, defaults as Record<string, FieldDesc>);
+  if (isFieldTable(defaults)) _fieldMeta.set(kind, defaults);
 
   _defaults.set(kind, dataDefaults);
   if (opts?.schema) _schemas.set(kind, opts.schema);
@@ -175,7 +174,7 @@ export function defineComponent<Data, const Kind extends string = string>(
   factory.kind = kind;
   factory.defaults = dataDefaults as Data;
   factory.create = factory;
-  return factory as ComponentFactory<Data, Kind>;
+  return factory;
 }
 
 export type Component = { type: string } & Record<string, unknown>;
