@@ -59,6 +59,13 @@ export class ObjectColumn implements Column {
 }
 
 /** TypedArray SoA column — each schema field = one Float64Array. Phase 2. */
+
+/** SoA 列窄化——isFloat64 字面量判别（false → ObjectColumn，免断言）。
+ *  Fast path 调用处已保证非 f64（hasF64 检测）；此处 throw 为防御。 */
+export function asObjectColumn(col: ObjectColumn | Float64Column): ObjectColumn {
+  if (col.isFloat64) throw new Error("asObjectColumn: expected ObjectColumn");
+  return col;
+}
 export class Float64Column implements Column {
   private _fields: Map<string, Float64Array>;
   private _schema: FieldSchema;

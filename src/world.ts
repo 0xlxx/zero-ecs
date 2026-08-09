@@ -16,7 +16,7 @@ import {
 import { _defaults, _kindOrder, _kindIds, _kindBits, _schemas, _sparseKinds } from "./component";
 import type { ComponentFactory, ResourceFactory } from "./component";
 import type { Component } from "./component";
-import { ObjectColumn, Float64Column } from "./storage";
+import { ObjectColumn, Float64Column, asObjectColumn } from "./storage";
 import type { Column } from "./storage";
 import type { Archetype } from "./archetype";
 import type { Query, QueryFilter } from "./query";
@@ -590,7 +590,7 @@ export class World {
           }
         }
         if (!hasF64 && n === 1) {
-          const d0 = (arch.columns[colIdxs[0]] as ObjectColumn).rawData() as Record<string, unknown>[];
+          const d0 = asObjectColumn(arch.columns[colIdxs[0]]).rawData();
           if (!needAlive) {
             for (let row = 0; row < count; row++) cb(d0[row], ents[row]);
           } else {
@@ -600,8 +600,8 @@ export class World {
             }
           }
         } else if (!hasF64 && n === 2) {
-          const d0 = (arch.columns[colIdxs[0]] as ObjectColumn).rawData() as Record<string, unknown>[];
-          const d1 = (arch.columns[colIdxs[1]] as ObjectColumn).rawData() as Record<string, unknown>[];
+          const d0 = asObjectColumn(arch.columns[colIdxs[0]]).rawData();
+          const d1 = asObjectColumn(arch.columns[colIdxs[1]]).rawData();
           if (!needAlive) {
             for (let row = 0; row < count; row++) cb(d0[row], d1[row], ents[row]);
           } else {
@@ -611,9 +611,9 @@ export class World {
             }
           }
         } else if (!hasF64 && n === 3) {
-          const d0 = (arch.columns[colIdxs[0]] as ObjectColumn).rawData() as Record<string, unknown>[];
-          const d1 = (arch.columns[colIdxs[1]] as ObjectColumn).rawData() as Record<string, unknown>[];
-          const d2 = (arch.columns[colIdxs[2]] as ObjectColumn).rawData() as Record<string, unknown>[];
+          const d0 = asObjectColumn(arch.columns[colIdxs[0]]).rawData();
+          const d1 = asObjectColumn(arch.columns[colIdxs[1]]).rawData();
+          const d2 = asObjectColumn(arch.columns[colIdxs[2]]).rawData();
           if (!needAlive) {
             for (let row = 0; row < count; row++) cb(d0[row], d1[row], d2[row], ents[row]);
           } else {
@@ -628,7 +628,7 @@ export class World {
           const lazyCols = colIdxs.map((ci) => {
             const col = arch.columns[ci];
             if (col.isFloat64) return { f64: col, raw: null as null };
-            return { f64: null, raw: (col as ObjectColumn).rawData() as Record<string, unknown>[] };
+            return { f64: null, raw: asObjectColumn(col).rawData() };
           });
           const a0 = lazyCols[0];
           const a1 = lazyCols[1];
@@ -688,7 +688,7 @@ export class World {
             rawCols[ci] = null;
             f64Cols[ci] = col;
           } else {
-            rawCols[ci] = (col as ObjectColumn).rawData() as Record<string, unknown>[];
+            rawCols[ci] = asObjectColumn(col).rawData();
             f64Cols[ci] = null;
           }
         }
@@ -822,7 +822,7 @@ export class World {
                 const lazyCols = colIdxs.map((ci) => {
                   const col = arch.columns[ci];
                   if (col.isFloat64) return { f64: col, raw: null as null };
-                  return { f64: null, raw: (col as ObjectColumn).rawData() as Record<string, unknown>[] };
+                  return { f64: null, raw: asObjectColumn(col).rawData() };
                 });
 
                 for (let row = 0; row < count; row++) {
@@ -935,7 +935,7 @@ export class World {
                     rawCols[ci] = null;
                     f64Cols[ci] = col;
                   } else {
-                    rawCols[ci] = (col as ObjectColumn).rawData() as Record<string, unknown>[];
+                    rawCols[ci] = asObjectColumn(col).rawData();
                     f64Cols[ci] = null;
                   }
                 }
