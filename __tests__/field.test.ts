@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { f, parseFields, fieldCatalog, defaultsFromFields, hasBindableFields } from "../src/field.js";
 import { defineComponent, fieldMeta } from "../src/component.js";
+import { packEntity } from "../src/entity.js";
 
 // ═══════════════════════════════════════════════════════════
 // defineComponent field mode
@@ -197,8 +198,9 @@ describe("Feature: f.entityId 字段（值类型 Entity——branded number 免�
   it("Scenario: Given f.entityId 默认值——When 实例化——Then 默认生效且可覆盖", () => {
     const Owner = defineComponent("owner2", { entity: f.entityId().default(0) });
     expect(Owner({}).entity).toBe(0);
-    const o = Owner({ entity: 42 });
-    expect(o.entity).toBe(42);
+    const eid = packEntity(42, 0);
+    const o = Owner({ entity: eid });
+    expect(o.entity).toBe(eid);
   });
 
   it("Scenario: Given parseFields entityId——When 非整数——Then 校验报错（与 int 同语义）", () => {
@@ -211,8 +213,9 @@ describe("Feature: f.entityId 字段（值类型 Entity——branded number 免�
 
   it("Scenario: Given f.array(f.entityId())——When 定义——Then 元素类型 Entity（泛型 ArrayDesc 元素感知）", () => {
     const Children = defineComponent("children2", { entities: f.array(f.entityId()).default([]) });
-    const inst = Children({ entities: [1, 2, 3] });
-    expect(inst.entities).toEqual([1, 2, 3]);
+    const eids = [packEntity(1, 0), packEntity(2, 0), packEntity(3, 0)];
+    const inst = Children({ entities: eids });
+    expect(inst.entities).toEqual(eids);
     const meta = fieldMeta("children2")!;
     expect(meta.entities.kind).toBe("array");
     expect((meta.entities as { elem: { kind: string } }).elem.kind).toBe("entityId");

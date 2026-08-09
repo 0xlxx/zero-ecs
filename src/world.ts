@@ -692,9 +692,9 @@ export class World {
             f64Cols[ci] = null;
           }
         }
-        const entsSnap: Entity[] = new Array<Entity>(count).fill(null as never);
+        const entsSnap: Entity[] = new Array<Entity>(count);
         const colsSnap = new Array<Record<string, unknown>[]>(n);
-        for (let ci = 0; ci < n; ci++) colsSnap[ci] = new Array<Record<string, unknown>>(count).fill(null as never);
+        for (let ci = 0; ci < n; ci++) colsSnap[ci] = new Array<Record<string, unknown>>(count);
         let len = 0;
         if (!needAlive) {
           for (let row = 0; row < count; row++) {
@@ -924,9 +924,9 @@ export class World {
                   w._componentIndex.get(f.factory.kind)?.get(archId),
                 );
                 // Build filtered snapshot arrays (preallocated)
-                const aliveEnts: Entity[] = new Array<Entity>(count).fill(null as never);
+                const aliveEnts: Entity[] = new Array<Entity>(count);
                 const aliveCols = new Array<Record<string, unknown>[]>(n);
-                for (let ci = 0; ci < n; ci++) aliveCols[ci] = new Array<Record<string, unknown>>(count).fill(null as never);
+                for (let ci = 0; ci < n; ci++) aliveCols[ci] = new Array<Record<string, unknown>>(count);
                 const rawCols: (Record<string, unknown>[] | null)[] = new Array(n);
                 const f64Cols: (Column | null)[] = new Array(n);
                 for (let ci = 0; ci < n; ci++) {
