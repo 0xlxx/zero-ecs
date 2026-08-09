@@ -379,7 +379,7 @@ export class World {
     if (!this.isAlive(entity)) return;
     const existing = this.getComponent(entity, factory);
     if (existing) {
-      this.setComponent(entity, factory.create({ ...existing, ...patch } as Partial<Data>));
+      this.setComponent(entity, factory.create({ ...existing, ...patch }));
     } else {
       this.setComponent(entity, factory.create(patch));
     }
@@ -397,7 +397,6 @@ export class World {
     patch: Partial<Data> | readonly Partial<Data>[],
   ): number {
     const kind = factory.kind;
-    const single = !Array.isArray(patch);
     // 按 archetype 分组（同列可批量写）
     const groups = new Map<number, { rows: number[]; values: Record<string, unknown>[] }>();
     let written = 0;
@@ -408,7 +407,7 @@ export class World {
       if (!rec) continue;
       const colIdx = this._componentIndex.get(kind)?.get(rec.archetypeId);
       if (colIdx === undefined) continue; // 实体无此组件——跳过（批量更新已有）
-      const p = (single ? patch : (patch as readonly Partial<Data>[])[i]) as Record<string, unknown>;
+      const p = (Array.isArray(patch) ? patch[i] : patch) as Record<string, unknown>;
       let g = groups.get(rec.archetypeId);
       if (!g) {
         g = { rows: [], values: [] };
