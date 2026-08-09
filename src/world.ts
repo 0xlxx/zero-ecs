@@ -166,7 +166,7 @@ export class World {
       });
       for (const [kind, data] of Object.entries(overrides)) {
         if (!cs.some((c) => c.type === kind)) {
-          merged.push({ type: kind, ...data } as unknown as Component);
+          merged.push({ type: kind, ...data });
         }
       }
     } else {
