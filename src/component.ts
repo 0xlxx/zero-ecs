@@ -5,6 +5,7 @@ import {
   type FieldDesc,
   defaultsFromFields,
 } from "./field.js";
+import type { Entity } from "./entity.js";
 
 // ═══════════════════════════════════════════════════════════
 // Component factory system
@@ -192,11 +193,12 @@ export type DataOf<F> =
 
 type DescToValue<D> =
   D extends { kind: "str" } | { kind: "entityRef" } ? string
+  : D extends { kind: "entityId" } ? Entity
   : D extends { kind: "num" } | { kind: "int" } | { kind: "hex" } ? number
   : D extends { kind: "bool" } ? boolean
   : D extends { kind: "vec3" } ? readonly [number, number, number]
   : D extends { kind: "tuple" } ? unknown[]
-  : D extends { kind: "array" } ? unknown[]
+  : D extends { kind: "array"; elem: infer E extends import("./field.js").FieldDesc } ? DescToValue<E>[]
   : D extends { kind: "map" } ? Record<string, unknown>
   : D extends { kind: "obj"; shape: infer S extends Record<string, FieldDesc> }
     ? { [K in keyof S]: DescToValue<S[K]> }

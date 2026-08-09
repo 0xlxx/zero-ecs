@@ -95,15 +95,15 @@ export interface TupleDesc extends FieldBase {
   bindable(): TupleDesc;
   optional(): TupleDesc;
 }
-export interface ArrayDesc extends FieldBase {
+export interface ArrayDesc<Elem extends FieldDesc = FieldDesc> extends FieldBase {
   kind: "array";
-  elem: FieldDesc;
+  elem: Elem;
   defaultValue?: unknown[];
-  default(v: unknown[]): ArrayDesc;
-  doc(s: string): ArrayDesc;
-  required(): ArrayDesc;
-  bindable(): ArrayDesc;
-  optional(): ArrayDesc;
+  default(v: unknown[]): ArrayDesc<Elem>;
+  doc(s: string): ArrayDesc<Elem>;
+  required(): ArrayDesc<Elem>;
+  bindable(): ArrayDesc<Elem>;
+  optional(): ArrayDesc<Elem>;
 }
 export interface MapDesc extends FieldBase {
   kind: "map";
@@ -155,9 +155,24 @@ export interface EntityRefDesc extends FieldBase {
   optional(): EntityRefDesc;
 }
 
+/** 实体 id 字段——运行时是 number（Entity 即 branded number），编译期类型为 Entity。 */
+export interface EntityIdDesc extends FieldBase {
+  kind: "entityId";
+  defaultValue?: number;
+  minValue?: number;
+  maxValue?: number;
+  default(v: number): EntityIdDesc;
+  min(v: number): EntityIdDesc;
+  max(v: number): EntityIdDesc;
+  doc(s: string): EntityIdDesc;
+  required(): EntityIdDesc;
+  bindable(): EntityIdDesc;
+  optional(): EntityIdDesc;
+}
+
 export type FieldDesc =
   | StrDesc | NumDesc | IntDesc | BoolDesc | HexDesc
-  | Vec3Desc | TupleDesc | ArrayDesc | MapDesc | AnyDesc | ObjDesc | UnionDesc | EntityRefDesc;
+  | Vec3Desc | TupleDesc | ArrayDesc | MapDesc | AnyDesc | ObjDesc | UnionDesc | EntityRefDesc | EntityIdDesc;
 
 // ═══════════════════════════════════════════════════════════
 // Builder helpers — every modifier mutates and returns the same
@@ -215,8 +230,8 @@ export const f = {
     d.default = (v: unknown[]) => { d.defaultValue = v; return d; };
     return d;
   },
-  array(elem: FieldDesc): ArrayDesc {
-    const d = withModifiers({ kind: "array", elem, isRequired: false, canBind: false } as ArrayDesc);
+  array<Elem extends FieldDesc>(elem: Elem): ArrayDesc<Elem> {
+    const d = withModifiers({ kind: "array", elem, isRequired: false, canBind: false } as ArrayDesc<Elem>);
     d.default = (v: unknown[]) => { d.defaultValue = v; return d; };
     return d;
   },
@@ -228,6 +243,13 @@ export const f = {
   entityRef(): EntityRefDesc {
     const d = withModifiers({ kind: "entityRef", isRequired: false, canBind: false } as EntityRefDesc);
     d.default = (v: string) => { d.defaultValue = v; return d; };
+    return d;
+  },
+  entityId(): EntityIdDesc {
+    const d = withModifiers({ kind: "entityId", isRequired: false, canBind: false } as EntityIdDesc);
+    d.default = (v: number) => { d.defaultValue = v; return d; };
+    d.min = (v: number) => { d.minValue = v; return d; };
+    d.max = (v: number) => { d.maxValue = v; return d; };
     return d;
   },
   union(...options: FieldDesc[]): UnionDesc {
@@ -300,11 +322,12 @@ function parseValue(desc: FieldDesc, v: unknown, path: string, errors: FieldErro
         errors.push(err(path, `invalid value "${v}"`, `one of: ${desc.enumValues.join(", ")}`));
       return v;
     case "num":
-    case "int": {
+    case "int":
+    case "entityId": {
       if (typeof v !== "number")
         errors.push(err(path, `expected number, got ${typeof v}`));
       else {
-        if (desc.kind === "int" && !Number.isInteger(v))
+        if ((desc.kind === "int" || desc.kind === "entityId") && !Number.isInteger(v))
           errors.push(err(path, `expected integer, got ${v}`));
         if (desc.minValue !== undefined && v < desc.minValue)
           errors.push(err(path, `value ${v} below minimum ${desc.minValue}`));

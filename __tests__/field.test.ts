@@ -181,3 +181,46 @@ describe("Point component end-to-end", () => {
     expect(inst.color).toBe(0xe06b38);
   });
 });
+
+// ── f.entityId / 泛型 ArrayDesc（P2-06 延伸：branded Entity 字段免断言）──
+
+describe("Feature: f.entityId 字段（值类型 Entity——branded number 免断言）", () => {
+  it("Scenario: Given f.entityId()——When 定义组件——Then kind=entityId 且数据是 Entity（运行时 number）", () => {
+    const Parent = defineComponent("parent2", { entity: f.entityId().default(0) });
+    const inst = Parent({});
+    expect(inst.type).toBe("parent2");
+    expect(inst.entity).toBe(0); // 运行时是 number（Entity 即 branded number）
+    const meta = fieldMeta("parent2")!;
+    expect(meta.entity.kind).toBe("entityId");
+  });
+
+  it("Scenario: Given f.entityId 默认值——When 实例化——Then 默认生效且可覆盖", () => {
+    const Owner = defineComponent("owner2", { entity: f.entityId().default(0) });
+    expect(Owner({}).entity).toBe(0);
+    const o = Owner({ entity: 42 });
+    expect(o.entity).toBe(42);
+  });
+
+  it("Scenario: Given parseFields entityId——When 非整数——Then 校验报错（与 int 同语义）", () => {
+    const r = parseFields({ e: f.entityId() }, { e: 1.5 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors[0].message).toContain("integer");
+    const ok = parseFields({ e: f.entityId() }, { e: 7 });
+    expect(ok.ok).toBe(true);
+  });
+
+  it("Scenario: Given f.array(f.entityId())——When 定义——Then 元素类型 Entity（泛型 ArrayDesc 元素感知）", () => {
+    const Children = defineComponent("children2", { entities: f.array(f.entityId()).default([]) });
+    const inst = Children({ entities: [1, 2, 3] });
+    expect(inst.entities).toEqual([1, 2, 3]);
+    const meta = fieldMeta("children2")!;
+    expect(meta.entities.kind).toBe("array");
+    expect((meta.entities as { elem: { kind: string } }).elem.kind).toBe("entityId");
+  });
+
+  it("Scenario: Given f.array(f.int())——When 定义——Then 元素类型 number（更精确）", () => {
+    const Nums = defineComponent("nums2", { list: f.array(f.int()).default([]) });
+    const inst = Nums({ list: [5, 6] });
+    expect(inst.list).toEqual([5, 6]);
+  });
+});
