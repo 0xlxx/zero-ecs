@@ -135,7 +135,7 @@ export class World {
     for (let ci = 0; ci < kinds.length; ci++) {
       const kind = kinds[ci];
       const c = kindMap.get(kind)!;
-      const { type: _type, ...data } = c as Record<string, unknown>;
+      const { type: _type, ...data } = c;
       arch.columns[ci].push(data);
       arch.addedTicks[ci].push(tick);
       arch.changedTicks[ci].push(tick);
@@ -161,8 +161,8 @@ export class World {
     let merged: Component[];
     if (overrides) {
       merged = cs.map((c) => {
-        const patch = overrides[c.type] as Record<string, unknown> | undefined;
-        return patch ? ({ ...c, ...patch } as Component) : c;
+        const patch = overrides[c.type];
+        return patch ? { ...c, ...patch } : c;
       });
       for (const [kind, data] of Object.entries(overrides)) {
         if (!cs.some((c) => c.type === kind)) {
@@ -437,7 +437,7 @@ export class World {
             if (arr) arr[row] = p[name] as number;
           }
         } else {
-          const data = col.get(row) as Record<string, unknown>;
+          const data = col.get(row);
           for (const name of Object.keys(p)) data[name] = p[name];
           col.set(row, data);
         }
@@ -1375,7 +1375,7 @@ export class World {
   private _writeComponent(entity: Entity, component: Component): void {
     const kind = component.type;
     const tick = this._nextTick();
-    const { type: _type, ...data } = component as Record<string, unknown>;
+    const { type: _type, ...data } = component;
     const rec = this._entityIndex.get(entity);
 
     if (!rec) {
