@@ -164,7 +164,8 @@ export function defineComponent<Data, const Kind extends string = string>(
       // do NOT override defaults — a missing field means "use the default".
       data = { ...(dataDefaults as Record<string, unknown>) } as Data;
       for (const key of Object.keys(overrides) as (keyof Data)[]) {
-        if (overrides[key] !== undefined) (data as unknown as Record<string, unknown>)[key as string] = overrides[key];
+        const value = overrides[key];
+        if (value !== undefined) data[key] = value;
       }
     } else {
       data = { ...(dataDefaults as Record<string, unknown>) } as Data;
