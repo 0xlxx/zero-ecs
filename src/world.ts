@@ -512,7 +512,7 @@ export class World {
           filter() {
             return this;
           },
-        } as unknown as Query<F>;
+        };
       }
 
       /** Intersect archetype maps of all factories + With filters, exclude Without.
