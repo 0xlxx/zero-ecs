@@ -170,9 +170,25 @@ export interface EntityIdDesc extends FieldBase {
   optional(): EntityIdDesc;
 }
 
+/** 通用 branded 数字字段（Handle<T>/Entity 等）——运行时 number，编译期 B。 */
+export interface BrandedDesc<B> extends FieldBase {
+  kind: "branded";
+  _phantom?: B;
+  defaultValue?: number;
+  minValue?: number;
+  maxValue?: number;
+  default(v: number): BrandedDesc<B>;
+  min(v: number): BrandedDesc<B>;
+  max(v: number): BrandedDesc<B>;
+  doc(s: string): BrandedDesc<B>;
+  required(): BrandedDesc<B>;
+  bindable(): BrandedDesc<B>;
+  optional(): BrandedDesc<B>;
+}
+
 export type FieldDesc =
   | StrDesc | NumDesc | IntDesc | BoolDesc | HexDesc
-  | Vec3Desc | TupleDesc | ArrayDesc | MapDesc | AnyDesc | ObjDesc | UnionDesc | EntityRefDesc | EntityIdDesc;
+  | Vec3Desc | TupleDesc | ArrayDesc | MapDesc | AnyDesc | ObjDesc | UnionDesc | EntityRefDesc | EntityIdDesc | BrandedDesc<unknown>;
 
 // ═══════════════════════════════════════════════════════════
 // Builder helpers — every modifier mutates and returns the same
@@ -252,6 +268,14 @@ export const f = {
     d.max = (v: number) => { d.maxValue = v; return d; };
     return d;
   },
+  /** 通用 branded 数字字段——值类型 B（运行时 number），供 Handle<T>/自定义 brand 使用。 */
+  branded<B>(): BrandedDesc<B> {
+    const d = withModifiers({ kind: "branded", isRequired: false, canBind: false } as BrandedDesc<B>);
+    d.default = (v: number) => { d.defaultValue = v; return d; };
+    d.min = (v: number) => { d.minValue = v; return d; };
+    d.max = (v: number) => { d.maxValue = v; return d; };
+    return d;
+  },
   union(...options: FieldDesc[]): UnionDesc {
     const d = withModifiers({ kind: "union", options, isRequired: false, canBind: false } as UnionDesc);
     d.default = (v: unknown) => { d.defaultValue = v; return d; };
@@ -323,7 +347,8 @@ function parseValue(desc: FieldDesc, v: unknown, path: string, errors: FieldErro
       return v;
     case "num":
     case "int":
-    case "entityId": {
+    case "entityId":
+    case "branded": {
       if (typeof v !== "number")
         errors.push(err(path, `expected number, got ${typeof v}`));
       else {

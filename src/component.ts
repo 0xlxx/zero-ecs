@@ -195,6 +195,7 @@ export type DataOf<F> =
 type DescToValue<D> =
   D extends { kind: "str" } | { kind: "entityRef" } ? string
   : D extends { kind: "entityId" } ? Entity
+  : D extends { kind: "branded"; _phantom?: infer B } ? B
   : D extends { kind: "num" } | { kind: "int" } | { kind: "hex" } ? number
   : D extends { kind: "bool" } ? boolean
   : D extends { kind: "vec3" } ? readonly [number, number, number]
