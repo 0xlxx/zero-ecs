@@ -37,7 +37,6 @@ export {
 } from "./field";
 export { Changed, Added, With, Without } from "./query";
 export type { Query, QueryFilter } from "./query";
-export { SparseSetColumn } from "./storage";
 export { World } from "./world";
 export { Commands, EntityCommands } from "./commands";
 

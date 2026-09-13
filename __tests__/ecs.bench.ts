@@ -1,8 +1,9 @@
 // packages/ecs/__tests__/ecs.bench.ts — ECS benchmark suite with snapshot comparison
 // @ts-nocheck
-// 运行: bun run packages/ecs/__tests__/ecs.bench.ts [--save]
-// --save: 保存当前结果作为基线快照
-// 无参数: 运行并对比上次快照
+// 默认（10K 规模，日常回归）: bun run packages/ecs/__tests__/ecs.bench.ts [--save]
+// 完整（100K 规模，发布前）:  bun run packages/ecs/__tests__/ecs.bench.ts --full [--save]
+// --save: 保存当前模式的结果作为基线快照
+// --check: 平均吞吐相对基线回退 >15% 时 exit 1（性能门禁）
 
 import { World, defineComponent, Changed } from "../src/index.js";
 import * as fs from "node:fs";
@@ -13,16 +14,26 @@ const runtime = is_bun ? `Bun ${(globalThis as any).Bun.version}` : `Node ${proc
 const now: () => number = is_bun ? (globalThis as any).Bun.nanoseconds : () => performance.now() * 1e6;
 const NS_TO_MS = 1e6;
 
+// 默认 10K：日常回归足够快；--full 恢复 100K 发布前基准。
+const FULL = process.argv.includes("--full") || process.argv.includes("--heavy");
+const BENCH_N = FULL ? 100_000 : 10_000;
+const BENCH_ITER = FULL ? 100 : 20;
+const SAMPLES = FULL ? 5 : 3;
+const CHECK = process.argv.includes("--check");
+const THRESHOLD_PCT = 15;
+const PER_CASE_THRESHOLD_PCT = 25;
+const PER_CASE_MIN_US = 20;
+
 // ── Components ──
 const Pos   = defineComponent("bnPos",   { x: 0, y: 0, z: 0 });
 const Vel   = defineComponent("bnVel",   { dx: 0, dy: 0, dz: 0 });
 // Float64Column variants (interleaved SoA)
 const pos_f64 = defineComponent("bnPosF64", { x: 0, y: 0, z: 0 }, { schema: { x: "float64", y: "float64", z: "float64" } });
 const vel_f64 = defineComponent("bnVelF64", { dx: 0, dy: 0, dz: 0 }, { schema: { dx: "float64", dy: "float64", dz: "float64" } });
-// Sparse component for mixed table+sparse benchmarks
-const sparse_tag = defineComponent("bnSparseTag", { v: 0 }, { storage: "sparse" });
-// Sparse Float64 — unified Column support
-const sparse_f64 = defineComponent("bnSparseF64", { a: 0, b: 0, c: 0 }, { storage: "sparse", schema: { a: "float64", b: "float64", c: "float64" } });
+// Tag component：archetype ObjectColumn
+const tag = defineComponent("bnTag", { v: 0 });
+// Tag component：archetype Float64Column
+const tag_f64 = defineComponent("bnTagF64", { a: 0, b: 0, c: 0 }, { schema: { a: "float64", b: "float64", c: "float64" } });
 const Hp    = defineComponent("bnHp",    { current: 100, max: 100 });
 const Size  = defineComponent("bnSize",  { w: 1, h: 1 });
 const Color = defineComponent("bnColor", { r: 255, g: 255, b: 255 });
@@ -46,7 +57,6 @@ interface BenchResult {
 
 // min-of-samples: single-sample measurements are dominated by JIT warmup noise
 // (measured 3x variance on identical code). Sample repeatedly, report the min.
-const SAMPLES = 5;
 function bench(name: string, setup: () => { run: () => void }, N: number, iter: number): BenchResult {
   let ctx = setup();
   for (let i = 0; i < Math.max(5, iter / 2); i++) ctx.run();
@@ -67,11 +77,12 @@ function bench(name: string, setup: () => { run: () => void }, N: number, iter: 
 // ── Scenarios ──
 function runAll(): BenchResult[] {
   const results: BenchResult[] = [];
-  const N = 100000, iter = 100;
+  const N = BENCH_N, iter = BENCH_ITER;
+  const mode = FULL ? "FULL" : "DEFAULT-10K";
 
   console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
   console.log(`║  learnvis ECS Benchmark — ${runtime.padEnd(35)}║`);
-  console.log(`║  N=${N}, iter=${iter}`);
+  console.log(`║  mode=${mode.padEnd(10)} N=${String(N).padEnd(7)} iter=${String(iter).padEnd(4)} samples=${SAMPLES}`.padEnd(65) + `║`);
   console.log(`╚══════════════════════════════════════════════════════════════╝`);
 
   // ── Simple: 1 archetype, all entities identical ──
@@ -120,35 +131,35 @@ function runAll(): BenchResult[] {
     } };
   }, N, iter));
 
-  // ── Sparse mixed: table + sparse component in same query ──
-  console.log(`\n── 1c. Sparse: ObjectColumn + SparseSet (table+sparse mixed) ──`);
+  // ── Tag mixed: archetype column + tag in same query ──
+  console.log(`\n── 1c. Tag mixed: ObjectColumn + tag in same query ──`);
 
-  results.push(bench("sparse: forEach(Pos,sparse_tag)", () => {
+  results.push(bench("tag: forEach(Pos,tag)", () => {
     const w = new World();
-    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), sparse_tag.create({ v: 1 })]);
-    return { run() { let s = 0; w.query(Pos, sparse_tag).forEach((p: any, t: any) => { s += p.x + t.v; }); void s; } };
+    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), tag.create({ v: 1 })]);
+    return { run() { let s = 0; w.query(Pos, tag).forEach((p: any, t: any) => { s += p.x + t.v; }); void s; } };
   }, N, iter));
 
-  results.push(bench("sparse: batch(Pos,sparse_tag)", () => {
+  results.push(bench("tag: batch(Pos,tag)", () => {
     const w = new World();
-    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), sparse_tag.create({ v: 1 })]);
-    return { run() { let s = 0; w.query(Pos, sparse_tag).batch((p: any, t: any, _e: any, c: number) => { for (let i = 0; i < c; i++) s += p[i].x + t[i].v; }); void s; } };
+    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), tag.create({ v: 1 })]);
+    return { run() { let s = 0; w.query(Pos, tag).batch((p: any, t: any, _e: any, c: number) => { for (let i = 0; i < c; i++) s += p[i].x + t[i].v; }); void s; } };
   }, N, iter));
 
-  // ── Sparse Float64: SparseSet backed by Float64Column ──
-  console.log(`\n── 1d. Sparse Float64: SparseSet + Float64Column ──`);
+  // ── Tag Float64: archetype Float64Column ──
+  console.log(`\n── 1d. Tag Float64: archetype Float64Column ──`);
 
-  results.push(bench("sparseF64: forEach(Pos,sparse_f64)", () => {
+  results.push(bench("tagF64: forEach(Pos,tag_f64)", () => {
     const w = new World();
-    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), sparse_f64.create({ a: i, b: 0, c: 0 })]);
-    return { run() { let s = 0; w.query(Pos, sparse_f64).forEach((p: any, s64: any) => { s += p.x + s64.a; }); void s; } };
+    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), tag_f64.create({ a: i, b: 0, c: 0 })]);
+    return { run() { let s = 0; w.query(Pos, tag_f64).forEach((p: any, s64: any) => { s += p.x + s64.a; }); void s; } };
   }, N, iter));
 
-  results.push(bench("sparseF64: batch(Pos,sparse_f64)", () => {
+  results.push(bench("tagF64: batch(Pos,tag_f64)", () => {
     const w = new World();
-    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), sparse_f64.create({ a: i, b: 0, c: 0 })]);
-    // Sparse batch receives Record[] per entity (SparseSet order ≠ archetype order)
-    return { run() { let s = 0; w.query(Pos, sparse_f64).batch((p: any, s64: any, _e: any, c: number) => { for (let i = 0; i < c; i++) s += p[i].x + s64[i].a; }); void s; } };
+    for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), tag_f64.create({ a: i, b: 0, c: 0 })]);
+    // batch receives Record[] per entity（tag 列也走对象快照，非 typed view）
+    return { run() { let s = 0; w.query(Pos, tag_f64).batch((p: any, s64: any, _e: any, c: number) => { for (let i = 0; i < c; i++) s += p[i].x + s64[i].a; }); void s; } };
   }, N, iter));
 
   // ── Realistic: 10 archetypes ──
@@ -207,8 +218,8 @@ function runAll(): BenchResult[] {
   console.log(`\n── 3. Filter performance ──`);
 
   // ── Spawn throughput (measures _grow() cost) ──
-  console.log(`\n── 3. Spawn throughput (100k entities, 10 rounds) ──`);
-  const spawn_iter = 10;
+  console.log(`\n── 3. Spawn throughput (${N} entities, ${FULL ? 10 : 5} rounds) ──`);
+  const spawn_iter = FULL ? 10 : 5;
 
   results.push(bench("spawn: ObjectColumn(Pos+Vel)", () => {
     return { run() { const w = new World(); for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), Vel.create({ dx: 1 })]); } };
@@ -219,8 +230,9 @@ function runAll(): BenchResult[] {
   }, N, spawn_iter));
 
   // ── Destroy / remove throughput ──
-  console.log(`\n── 4. Destroy & remove (10k entities, 50 rounds) ──`);
-  const destroy_n = 10000, destroyIter = 50;
+  const destroy_n = FULL ? 10000 : 2000;
+  const destroyIter = FULL ? 50 : 20;
+  console.log(`\n── 4. Destroy & remove (${destroy_n} entities, ${destroyIter} rounds) ──`);
 
   results.push(bench("destroy: table only (1c, Pos)", () => {
     const entities: Entity[] = [];
@@ -241,10 +253,10 @@ function runAll(): BenchResult[] {
     return { run() { for (let i = 0; i < destroy_n; i++) w.destroy(entities[i]); w.flushDestroyed(); } };
   }, destroy_n, destroyIter));
 
-  results.push(bench("destroy: sparse only (sparse_tag)", () => {
+  results.push(bench("destroy: tag only (tag)", () => {
     const entities: Entity[] = [];
     const w = new World();
-    for (let i = 0; i < destroy_n; i++) entities.push(w.spawn([sparse_tag.create({ v: 1 })]));
+    for (let i = 0; i < destroy_n; i++) entities.push(w.spawn([tag.create({ v: 1 })]));
     return { run() { for (let i = 0; i < destroy_n; i++) w.destroy(entities[i]); w.flushDestroyed(); } };
   }, destroy_n, destroyIter));
 
@@ -257,10 +269,10 @@ function runAll(): BenchResult[] {
     } };
   }, destroy_n, destroyIter));
 
-  results.push(bench("spawn: Pos+sparse_tag (remove baseline)", () => {
+  results.push(bench("spawn: Pos+tag (remove baseline)", () => {
     return { run() {
       const w = new World();
-      for (let i = 0; i < destroy_n; i++) w.spawn([Pos.create({ x: i }), sparse_tag.create({ v: 1 })]);
+      for (let i = 0; i < destroy_n; i++) w.spawn([Pos.create({ x: i }), tag.create({ v: 1 })]);
     } };
   }, destroy_n, destroyIter));
 
@@ -272,11 +284,11 @@ function runAll(): BenchResult[] {
     } };
   }, destroy_n, destroyIter));
 
-  results.push(bench("removeComponent: sparse (remove sparse_tag from Pos+Tag)", () => {
+  results.push(bench("removeComponent: tag (remove tag from Pos+Tag)", () => {
     return { run() {
       const w = new World(); const e: Entity[] = [];
-      for (let i = 0; i < destroy_n; i++) e.push(w.spawn([Pos.create({ x: i }), sparse_tag.create({ v: 1 })]));
-      for (let i = 0; i < destroy_n; i++) w.removeComponent(e[i], sparse_tag);
+      for (let i = 0; i < destroy_n; i++) e.push(w.spawn([Pos.create({ x: i }), tag.create({ v: 1 })]));
+      for (let i = 0; i < destroy_n; i++) w.removeComponent(e[i], tag);
     } };
   }, destroy_n, destroyIter));
 
@@ -337,51 +349,78 @@ function runAll(): BenchResult[] {
 
 // ── Snapshot management ──
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
-const SNAPSHOT_FILE = path.join(__dirname, "ecs.bench-snapshot.json");
+const SNAPSHOT_FILE = path.join(
+  __dirname,
+  FULL ? "ecs.bench-snapshot.json" : "ecs.bench-snapshot-10k.json",
+);
 
 function save_snapshot(results: BenchResult[]) {
   const data = {
     timestamp: new Date().toISOString(),
     runtime,
+    mode: FULL ? "full" : "10k",
+    N: BENCH_N,
+    iter: BENCH_ITER,
+    samples: SAMPLES,
     results: results.map(r => ({ name: r.name, throughput: r.throughput, usPerIter: r.usPerIter })),
   };
   fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(data, null, 2));
-  console.log(`\nSnapshot saved -> ecd.bench-snapshot.json`);
+  console.log(`\nSnapshot saved -> ${path.basename(SNAPSHOT_FILE)}`);
 }
 
-function compare_with_snapshot(results: BenchResult[]) {
+function compare_with_snapshot(results: BenchResult[]): { avg: number | undefined; matched: number; worst: number } {
   if (!fs.existsSync(SNAPSHOT_FILE)) {
     console.log(`\nNo baseline snapshot found. Run with --save to create one.`);
-    return;
+    if (CHECK) process.exit(1);
+    return { avg: undefined, matched: 0, worst: 0 };
   }
   const baseline = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, "utf-8"));
+  const mode = FULL ? "full" : "10k";
+  const metadataMismatch =
+    baseline.mode !== mode ||
+    baseline.N !== BENCH_N ||
+    baseline.iter !== BENCH_ITER ||
+    baseline.samples !== SAMPLES;
+  if (metadataMismatch) {
+    console.log(`\nBaseline metadata mismatch (${JSON.stringify({ mode: baseline.mode, N: baseline.N, iter: baseline.iter, samples: baseline.samples })} != ${JSON.stringify({ mode, N: BENCH_N, iter: BENCH_ITER, samples: SAMPLES })}); skipped.`);
+    if (CHECK) process.exit(1);
+    return { avg: undefined, matched: 0, worst: 0 };
+  }
   console.log(`\n╔══════════════════════════════════════════════════════════════╗`);
   console.log(`║  vs baseline: ${baseline.timestamp.split("T")[0]} (${baseline.runtime})`.padEnd(65) + `║`);
   console.log(`╠══════════════════════════════════════════════════════════════╣`);
 
-  const baseline_map = new Map(baseline.results.map((r: any) => [r.name, r.throughput]));
-  let total_delta = 0, count = 0;
+  const baseline_map = new Map(baseline.results.map((r: any) => [r.name, r]));
+  let total_delta = 0, count = 0, worst = 0;
 
   for (const r of results) {
-    const base = baseline_map.get(r.name);
-    if (base !== undefined) {
+    const baseRow = baseline_map.get(r.name);
+    if (baseRow !== undefined) {
+      const base = baseRow.throughput;
       const delta = ((r.throughput - base) / base * 100);
       const arrow = delta > 0.5 ? "▲" : delta < -0.5 ? "▼" : " ";
       const prefix = delta > 0.5 ? "+" : "";
       console.log(`  ${r.name.padEnd(48)} ${base.toFixed(0).padStart(6)} → ${r.throughput.toFixed(0).padStart(6)} M/s  ${arrow}${prefix}${delta.toFixed(1)}%`);
       total_delta += delta;
       count++;
+      if ((baseRow.usPerIter ?? 0) >= PER_CASE_MIN_US) worst = Math.min(worst, delta);
     } else {
       console.log(`  ${r.name.padEnd(48)}     NEW → ${r.throughput.toFixed(0).padStart(6)} M/s`);
     }
   }
+  let avg: number | undefined;
   if (count > 0) {
-    const avg = total_delta / count;
+    avg = total_delta / count;
     const arrow = avg > 0.5 ? "▲" : avg < -0.5 ? "▼" : " ";
     console.log(`  ${"─".repeat(60)}`);
     console.log(`  AVERAGE${"".padEnd(41)} ${arrow}${avg > 0 ? "+" : ""}${avg.toFixed(1)}%`);
+    console.log(`  WORST (>=${PER_CASE_MIN_US}µs cases)${"".padEnd(24)} ${worst > 0 ? "+" : ""}${worst.toFixed(1)}%`);
+  } else if (CHECK) {
+    console.log(`\nNo matching benchmark keys; gate fails.`);
+    process.exit(1);
   }
   console.log(`╚══════════════════════════════════════════════════════════════╝`);
+  return { avg, matched: count, worst };
 }
 
 // ── Main ──
@@ -390,5 +429,16 @@ const results = runAll();
 if (process.argv.includes("--save")) {
   save_snapshot(results);
 } else {
-  compare_with_snapshot(results);
+  const { avg, matched, worst } = compare_with_snapshot(results);
+  if (CHECK) {
+    if (avg === undefined || matched === 0) process.exit(1);
+    if (avg < -THRESHOLD_PCT) {
+      console.error(`\nPerf gate failed: average throughput ${avg.toFixed(1)}% (threshold -${THRESHOLD_PCT}%).`);
+      process.exit(1);
+    }
+    if (worst < -PER_CASE_THRESHOLD_PCT) {
+      console.error(`\nPerf gate failed: worst stable case ${worst.toFixed(1)}% (threshold -${PER_CASE_THRESHOLD_PCT}%).`);
+      process.exit(1);
+    }
+  }
 }

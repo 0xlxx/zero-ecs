@@ -55,8 +55,6 @@ export const _kindBits = new Map<string, bigint>();
 /** Phase 2: per-kind TypedArray field schema. Undefined = ObjectColumn. */
 export type FieldSchema = Record<string, "float64">;
 export const _schemas = new Map<string, FieldSchema>();
-/** Per-kind sparse storage flag. Set by defineComponent opts.storage === "sparse". */
-export const _sparseKinds = new Set<string>();
 
 /** Per-kind field descriptor tables — populated by defineComponent in field mode. */
 export const _fieldMeta = new Map<string, Record<string, FieldDesc>>();
@@ -123,17 +121,17 @@ export function defineResource<Data = unknown>(kind: string): ResourceFactory<Da
 export function defineComponent<const Kind extends string, F extends Record<string, FieldDesc>>(
   kind: Kind,
   fields: F,
-  opts?: { schema?: FieldSchema; storage?: "sparse" },
+  opts?: { schema?: FieldSchema },
 ): ComponentFactory<FieldsToData<F>, Kind>;
 export function defineComponent<Data extends Record<string, unknown>, const Kind extends string = string>(
   kind: Kind,
   defaults: Data,
-  opts?: { schema?: FieldSchema; storage?: "sparse" },
+  opts?: { schema?: FieldSchema },
 ): ComponentFactory<Data, Kind>;
 export function defineComponent<Data extends Record<string, unknown>, const Kind extends string = string>(
   kind: Kind,
   defaults: Data | Record<string, FieldDesc>,
-  opts?: { schema?: FieldSchema; storage?: "sparse" },
+  opts?: { schema?: FieldSchema },
 ): ComponentFactory<Data, Kind> {
   // Guard: duplicate registration
   if (_kindBits.has(kind)) {
@@ -154,7 +152,6 @@ export function defineComponent<Data extends Record<string, unknown>, const Kind
 
   _defaults.set(kind, dataDefaults);
   if (opts?.schema) _schemas.set(kind, opts.schema);
-  if (opts?.storage === "sparse") _sparseKinds.add(kind);
 
   function factory(overrides?: Partial<Data>): ComponentOf<Data> {
     let data: Data;

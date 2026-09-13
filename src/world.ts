@@ -5,15 +5,11 @@ import {
   entityIndex,
   entityGen,
   packEntity,
-  getGenerations,
-  resizeGenerations,
-  _freeSlots,
-  _entityState,
   GEN_BITS,
   GEN_MASK,
   INDEX_MASK,
 } from "./entity";
-import { _defaults, _kindOrder, _kindIds, _kindBits, _schemas, _sparseKinds } from "./component";
+import { _kindOrder, _kindIds, _schemas } from "./component";
 import type { ComponentFactory, ResourceFactory } from "./component";
 import type { Component } from "./component";
 import { ObjectColumn, Float64Column, asObjectColumn } from "./storage";
@@ -37,6 +33,13 @@ const CACHE_THRESHOLD = 16;
 export class World {
   private _tick = 0;
   private _entityCount = 0;
+
+  // ── Entity allocator / generation table (per-World isolation) ──
+  private _gens = new Uint16Array(256);
+  /** Stable holder for query iterators: growth replaces gens without staling captured views. */
+  private _genState = { gens: this._gens };
+  private _freeSlots: number[] = [];
+  private _nextSlot = 0;
 
   // ── Archetype column storage (Mertens Building ECS #1+#2) ──
   private _entityIndex = new Map<Entity, { archetypeId: number; row: number }>();
@@ -106,16 +109,26 @@ export class World {
    * Used by Commands.spawn() for immediate entity reservation with deferred archetype allocation.
    */
   reserveEntity(): Entity {
-    const index = _freeSlots.length > 0 ? _freeSlots.pop()! : _entityState.nextSlot++;
-    if (index >= getGenerations().length) {
-      const oldGen = getGenerations();
-      const newCap = Math.max(index + 256, getGenerations().length * 2);
-      resizeGenerations(newCap);
-      getGenerations().set(oldGen);
+    let index: number;
+    if (this._freeSlots.length > 0) {
+      index = this._freeSlots.pop()!;
+    } else {
+      if (this._nextSlot > INDEX_MASK) {
+        throw new Error(`[ecs] entity index space exhausted (max ${INDEX_MASK + 1} slots)`);
+      }
+      index = this._nextSlot++;
     }
-    let gen = (getGenerations()[index] + 1) & GEN_MASK;
+    if (index >= this._gens.length) {
+      const oldGen = this._gens;
+      const newCap = Math.max(index + 256, this._gens.length * 2);
+      const next = new Uint16Array(newCap);
+      next.set(oldGen);
+      this._gens = next;
+      this._genState.gens = next;
+    }
+    let gen = (this._gens[index] + 1) & GEN_MASK;
     if (gen === 0) gen = 1;
-    getGenerations()[index] = gen;
+    this._gens[index] = gen;
     this._entityCount++;
     return packEntity(index, gen);
   }
@@ -191,10 +204,15 @@ export class World {
     this._pendingDestroy.delete(entity);
 
     const idx = entityIndex(entity);
-    let gen = (getGenerations()[idx] + 1) & GEN_MASK;
-    if (gen === 0) gen = 1;
-    getGenerations()[idx] = gen;
-    _freeSlots.push(idx);
+    const currentGen = this._gens[idx];
+    if (currentGen >= GEN_MASK) {
+      // Generation exhausted: retire the slot instead of wrapping to gen 1,
+      // which would silently revive stale handles.
+      this._gens[idx] = 0;
+    } else {
+      this._gens[idx] = currentGen + 1;
+      this._freeSlots.push(idx);
+    }
     this._entityCount--;
     this._deferredDestroys.push(entity);
   }
@@ -250,7 +268,11 @@ export class World {
 
   /** Returns true if the entity is alive. O(1) generation comparison (Gregory §17.5 handle pattern). */
   isAlive(entity: Entity): boolean {
-    return getGenerations()[entityIndex(entity)] === entityGen(entity);
+    // gen 0 is the NULL_ENTITY/retired-slot sentinel and is never a live handle.
+    // Live entity indices are always < _gens.length (reserveEntity grows first);
+    // forged/out-of-range handles read `undefined`, which never equals a gen.
+    const gen = entityGen(entity);
+    return gen !== 0 && this._gens[entityIndex(entity)] === gen;
   }
 
   entityCount(): number {
@@ -468,11 +490,6 @@ export class World {
     return this._hasComponentInternal(entity, factory.kind);
   }
 
-  /** @internal Check by type string — used by Commands.insertIfNew. */
-  _hasComponentKind(entity: Entity, kind: string): boolean {
-    return this._hasComponentInternal(entity, kind);
-  }
-
   /** Remove a component from an entity. */
   removeComponent(entity: Entity, factory: ComponentFactory<unknown>): void {
     if (!this.isAlive(entity)) return;
@@ -564,8 +581,8 @@ export class World {
       /** Inline generation check — local Uint16Array ref, no method calls (JIT-friendly). */
       const isAliveFast = (
         e: Entity,
-        gens: Uint16Array,
-      ): boolean => gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK);
+        genState: { gens: Uint16Array },
+      ): boolean => genState.gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK);
 
       /** No-filter row loop, arity-specialized. Kept as a separate function so the
        *  JIT can optimize the hot loop independently of the large forEach body
@@ -575,7 +592,7 @@ export class World {
         arch: Archetype,
         colIdxs: number[],
         needAlive: boolean,
-        gens: Uint16Array,
+        genState: { gens: Uint16Array },
         cb: (...data: unknown[]) => void,
       ): void {
         const n = factories.length;
@@ -595,7 +612,7 @@ export class World {
           } else {
             for (let row = 0; row < count; row++) {
               const e = ents[row];
-              if (gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) cb(d0[row], e);
+              if (genState.gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) cb(d0[row], e);
             }
           }
         } else if (!hasF64 && n === 2) {
@@ -606,7 +623,7 @@ export class World {
           } else {
             for (let row = 0; row < count; row++) {
               const e = ents[row];
-              if (gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) cb(d0[row], d1[row], e);
+              if (genState.gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) cb(d0[row], d1[row], e);
             }
           }
         } else if (!hasF64 && n === 3) {
@@ -618,7 +635,7 @@ export class World {
           } else {
             for (let row = 0; row < count; row++) {
               const e = ents[row];
-              if (gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK))
+              if (genState.gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK))
                 cb(d0[row], d1[row], d2[row], e);
             }
           }
@@ -650,7 +667,7 @@ export class World {
           } else {
             for (let row = 0; row < count; row++) {
               const e = ents[row];
-              if (gens[(e >>> GEN_BITS) & INDEX_MASK] !== (e & GEN_MASK)) continue;
+              if (genState.gens[(e >>> GEN_BITS) & INDEX_MASK] !== (e & GEN_MASK)) continue;
               if (n === 1) {
                 cb(v(a0, row), e);
               } else if (n === 2) {
@@ -672,7 +689,7 @@ export class World {
         arch: Archetype,
         colIdxs: number[],
         needAlive: boolean,
-        gens: Uint16Array,
+        genState: { gens: Uint16Array },
         cb: (...cols: unknown[]) => void,
       ): void {
         const n = factories.length;
@@ -707,7 +724,7 @@ export class World {
         } else {
           for (let row = 0; row < count; row++) {
             const e = ents[row];
-            if (gens[(e >>> GEN_BITS) & INDEX_MASK] !== (e & GEN_MASK)) continue;
+            if (genState.gens[(e >>> GEN_BITS) & INDEX_MASK] !== (e & GEN_MASK)) continue;
             entsSnap[len] = e;
             for (let ci = 0; ci < n; ci++) {
               const raw = rawCols[ci];
@@ -788,7 +805,7 @@ export class World {
             if (!candidate || candidate.size === 0) return;
             const n = factories.length;
             const needAlive = aliveCheck();
-            const gens = getGenerations();
+            const genState = w._genState;
             const cb = callback;
             const hasRowFilters = changedFilters.length > 0 || addedFilters.length > 0;
 
@@ -826,7 +843,7 @@ export class World {
 
                 for (let row = 0; row < count; row++) {
                   const e = ents[row];
-                  if (needAlive && !isAliveFast(e, gens)) continue;
+                  if (needAlive && !isAliveFast(e, genState)) continue;
 
                   // Changed: ANY specified component changed (OR)
                   // 按 kind 精确判断（consumption lastSeen）——不做 master 标量快路径：
@@ -889,7 +906,7 @@ export class World {
               }
 
               // ── No row filters: delegate to the specialized fast path ──
-              runFastRows(arch, colIdxs, needAlive, gens, cb);
+              runFastRows(arch, colIdxs, needAlive, genState, cb);
             }
           },
 
@@ -898,7 +915,7 @@ export class World {
             if (!candidate || candidate.size === 0) return;
             const n = factories.length;
             const needAlive = aliveCheck();
-            const gens = getGenerations();
+            const genState = w._genState;
             const hasRowFilters = changedFilters.length > 0 || addedFilters.length > 0;
 
             const compIdx = new Array<Map<number, number>>(n);
@@ -941,7 +958,7 @@ export class World {
                 let len = 0;
                 for (let row = 0; row < count; row++) {
                   const e = ents[row];
-                  if (needAlive && !isAliveFast(e, gens)) continue;
+                  if (needAlive && !isAliveFast(e, genState)) continue;
                   // Changed check (OR)
                   if (changedFilters.length > 0) {
                     let anyChanged = false;
@@ -986,7 +1003,7 @@ export class World {
               //    a matched entity → it moves to another archetype and swap-removes rows
               //    from the live arrays). Iterating live arrays under mutation yields
               //    undefined rows (regression: GeometrySystem specSig crash). ──
-              runFastBatch(arch, colIdxs, needAlive, gens, callback);
+              runFastBatch(arch, colIdxs, needAlive, genState, callback);
             }
           },
 
@@ -994,7 +1011,7 @@ export class World {
             const candidate = getCandidates();
             if (!candidate || candidate.size === 0) return [];
             const needAlive = aliveCheck();
-            const gens = getGenerations();
+            const genState = w._genState;
             const hasRowFilters = changedFilters.length > 0 || addedFilters.length > 0;
             const result: Entity[] = [];
             for (const archId of candidate) {
@@ -1009,7 +1026,7 @@ export class World {
                 );
                 for (let row = 0; row < count; row++) {
                   const e = arch.entities[row];
-                  if (needAlive && !isAliveFast(e, gens)) continue;
+                  if (needAlive && !isAliveFast(e, genState)) continue;
                   if (changedFilters.length > 0) {
                     let anyChanged = false;
                     for (let fi = 0; fi < changedFilters.length; fi++) {
@@ -1050,7 +1067,7 @@ export class World {
                   const ents = arch.entities;
                   for (let row = 0; row < count; row++) {
                     const e = ents[row];
-                    if (gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) result.push(e);
+                    if (genState.gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) result.push(e);
                   }
                 }
               }
@@ -1062,7 +1079,7 @@ export class World {
             const candidate = getCandidates();
             if (!candidate || candidate.size === 0) return undefined;
             const needAlive = aliveCheck();
-            const gens = getGenerations();
+            const genState = w._genState;
             const hasRowFilters = changedFilters.length > 0 || addedFilters.length > 0;
             for (const archId of candidate) {
               const arch = w._archetypes.get(archId)!;
@@ -1077,7 +1094,7 @@ export class World {
                 );
                 for (let row = 0; row < ents.length; row++) {
                   const e = ents[row];
-                  if (needAlive && !isAliveFast(e, gens)) continue;
+                  if (needAlive && !isAliveFast(e, genState)) continue;
                   // OR 语义与 forEach/entities 一致：任一 Changed 命中 + 任一 Added 命中
                   let anyChanged = true;
                   if (changedFilters.length > 0) {
@@ -1115,7 +1132,7 @@ export class World {
               } else {
                 for (let row = 0; row < ents.length; row++) {
                   const e = ents[row];
-                  if (gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) return e;
+                  if (genState.gens[(e >>> GEN_BITS) & INDEX_MASK] === (e & GEN_MASK)) return e;
                 }
               }
             }
@@ -1453,6 +1470,9 @@ export class World {
         this._removedBuffer[cid] = set;
       }
       set.add(entity);
+      // 移除也算该 kind 的变更——bump lastChangedTick 让 dirty-check fast path
+      // 感知（Bevy change detection：RemovedComponents 独立 reader 可见移除）。
+      this._lastChangedTick.set(kind, this._tick);
     }
 
     const newKinds = oldArch.type.filter((k) => k !== kind);

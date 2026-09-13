@@ -32,39 +32,6 @@ export class EntityCommands {
     return this;
   }
 
-  /** Queue a component insert only if the component kind doesn't already exist on the entity.
-   *  Check is performed at execution time, not queue time. */
-  insertIfNew(component: Component): this {
-    const entity = this._entity;
-    const kind = component.type;
-    this._world._enqueue(() => {
-      if (!this._world._hasComponentKind(entity, kind)) {
-        this._world.addComponent(entity, component);
-      }
-    });
-    return this;
-  }
-
-  /** Queue a component insert only if the value differs from what's already on the entity.
-   *  Uses shallow value comparison (JSON). Check is performed at execution time. */
-  insertIfNeq(component: Component): this {
-    const entity = this._entity;
-    this._world._enqueue(() => {
-      const existing = this._world._getComponentRaw(entity, component.type);
-      if (existing === undefined) {
-        this._world.addComponent(entity, component);
-        return;
-      }
-      // Shallow compare — strip the 'type' key and compare the data fields
-      const { type: _, ...newFields } = component;
-      const { type: __, ...oldFields } = existing;
-      if (JSON.stringify(newFields) !== JSON.stringify(oldFields)) {
-        this._world.addComponent(entity, component);
-      }
-    });
-    return this;
-  }
-
   /** Queue removal of a component kind. Returns this for chaining. */
   remove(factory: ComponentFactory<unknown>): this {
     const entity = this._entity;
@@ -126,14 +93,6 @@ export class Commands {
   removeResource<D>(factory: ResourceFactory<D>): void {
     this._world._enqueue(() => {
       this._world.removeResource(factory);
-    });
-  }
-
-  /** Queue an arbitrary mutation with errors silently swallowed.
-   *  Equivalent to Bevy's `queue_silenced()`. */
-  silenced(fn: () => void): void {
-    this._world._enqueue(() => {
-      try { fn(); } catch { /* silenced */ }
     });
   }
 }

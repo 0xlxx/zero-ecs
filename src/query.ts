@@ -42,12 +42,12 @@ type QueryCols<F extends readonly unknown[]> = { [K in keyof F]: ExtractData<F[K
 type BatchCols<F extends readonly unknown[]> = { [K in keyof F]: ExtractData<F[K]>[] };
 
 /** forEach callback: (component data..., Entity) — variadic tuple, any arity. */
-export type ForEachCallback<F extends readonly unknown[]> = (
+type ForEachCallback<F extends readonly unknown[]> = (
   ...args: [...QueryCols<F>, Entity]
 ) => void;
 
 /** batch callback: (column arrays..., Entity[], count) — variadic tuple, any arity. */
-export type BatchCallback<F extends readonly unknown[]> = (
+type BatchCallback<F extends readonly unknown[]> = (
   ...args: [...BatchCols<F>, Entity[], number]
 ) => void;
 

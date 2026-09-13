@@ -31,23 +31,6 @@ export function entityGen(e: Entity): number {
 /** Check if an entity is still alive. */
 export function isAlive(e: Entity, generations: Uint16Array): boolean {
   const idx = entityIndex(e);
-  return idx < generations.length && entityGen(e) === generations[idx];
+  const gen = entityGen(e);
+  return gen !== 0 && idx < generations.length && gen === generations[idx];
 }
-
-/** Per-slot generation table. Lazily grown on demand.
- *  Use resizeGenerations() to replace, getGenerations() to read. */
-let _generations: Uint16Array = new Uint16Array(256);
-export function getGenerations(): Uint16Array {
-  return _generations;
-}
-export function resizeGenerations(size: number): void {
-  _generations = new Uint16Array(size);
-}
-
-/** Free slot stack (LIFO). */
-export const _freeSlots: number[] = [];
-
-/** Mutable slot state — use _entityState.nextSlot for writes. */
-export const _entityState = {
-  nextSlot: 0,
-};
