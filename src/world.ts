@@ -15,6 +15,7 @@ import type { Component } from "./component";
 import { ObjectColumn, Float64Column, asObjectColumn } from "./storage";
 import type { Column } from "./storage";
 import type { Archetype } from "./archetype";
+import { QueryState } from "./query";
 import type { Query, QueryFilter } from "./query";
 
 // ═══════════════════════════════════════════════════════════
@@ -70,7 +71,10 @@ export class World {
   private _deferredDestroys: Entity[] = [];
   /** Entities killed this frame. Populated by _flushDestroys; reset at frame end (setCurrentObserver(null)). */
   private _killedThisFrame: Entity[] = [];
-  /** Per-observer consumed count into _killedThisFrame (Bevy RemovedComponents 多读者游标). */
+  /** 上一帧 kill——Bevy RemovedComponents 双缓冲：kill 事件存活 2 帧，
+   *  保证「排在 killer 之前」的系统下帧仍能看到（帧内排序无关）。 */
+  private _killedPrevFrame: Entity[] = [];
+  /** Per-observer consumed count into 逻辑流 [prev, thisFrame]（多读者游标）。 */
   private _killedCursor = new Map<string, number>();
 
   // ── Before-destroy hooks (Johnson §3.2 p53: "finalizer or destruction callback system") ──
@@ -83,10 +87,26 @@ export class World {
   private _onAddHooks = new Map<string, Set<(entity: Entity) => void>>();
   /** Per-kind on_remove hooks. Fires when a component type is removed from an entity. */
   private _onRemoveHooks = new Map<string, Set<(entity: Entity) => void>>();
+  /** Per-kind change hooks. Fires once for each completed insert/replace write. */
+  private changedHooks = new Map<string, Set<(entity: Entity, data?: Record<string, unknown>) => void>>();
+  /** Fast gate for the common no-hook write path. */
+  private hasChangedHooks = false;
 
   // ── Component removal tracking ──
-  /** Per-component-ID entities that had a component removed this frame. Indexed by component ID. */
-  private _removedBuffer: Set<Entity>[] = [];
+  /** Removal tracking grouped to keep the World object shape compact. */
+  private _removedState = {
+    /** 本帧移除（帧末轮转进 prev）。 */
+    buffer: [] as Entity[][],
+    /** 上一帧移除——Bevy RemovedComponents 事件双缓冲：与 drainKilled() 同一套 2 帧窗口语义。 */
+    prev: [] as Entity[][],
+    /** 本帧已记录集合（同帧去重；帧末轮转时清空）。 */
+    seen: [] as Set<Entity>[],
+    cursors: new Map<string, Map<number, number>>(),
+  };
+  /** Guards against re-entrant removal of the same entity/component pair. */
+  private _removingComponents = new Set<string>();
+  /** Structural changes that invalidate stage skip-if-clean without a component tick. */
+  private _structuralDirtyTick = 0;
 
   // ── Observer tracking ──
   private _currentObserver: string | null = null;
@@ -145,10 +165,14 @@ export class World {
     const row = arch.entities.length;
     arch.entities.push(entity);
     const kindMap = new Map(components.map((c) => [c.type, c]));
+    const dataByKind = this.hasChangedHooks && kinds.some((kind) => this.changedHooks.get(kind)?.size)
+      ? new Map<string, Record<string, unknown>>()
+      : undefined;
     for (let ci = 0; ci < kinds.length; ci++) {
       const kind = kinds[ci];
       const c = kindMap.get(kind)!;
       const { type: _type, ...data } = c;
+      dataByKind?.set(kind, data);
       arch.columns[ci].push(data);
       arch.addedTicks[ci].push(tick);
       arch.changedTicks[ci].push(tick);
@@ -157,7 +181,10 @@ export class World {
     this._entityIndex.set(entity, { archetypeId: arch.id, row });
 
     for (const kind of kinds) {
-      this._fireHooks(this._onAddHooks.get(kind), entity);
+      const addHooks = this._onAddHooks.get(kind);
+      if (addHooks?.size) this._fireHooks(addHooks, entity);
+      const hooks = this.changedHooks.get(kind);
+      if (dataByKind && hooks?.size) this._fireHooks(hooks, entity, dataByKind.get(kind));
     }
   }
 
@@ -197,8 +224,12 @@ export class World {
     if (this._pendingDestroy?.has(entity)) return;
     (this._pendingDestroy ??= new Set()).add(entity);
 
-    for (const cb of this._onBeforeDestroyHooks) {
-      cb(entity);
+    for (const callback of this._onBeforeDestroyHooks) {
+      try {
+        callback(entity);
+      } catch (error) {
+        console.error("[ecs] lifecycle hook failed:", error);
+      }
     }
 
     this._pendingDestroy.delete(entity);
@@ -264,6 +295,41 @@ export class World {
     return () => {
       hooks!.delete(cb);
     };
+  }
+
+  /**
+   * Register a component-change hook.
+   *
+   * Runs exactly once for each completed insert or replacement of an existing
+   * component. It does not run for removals. Hooks are isolated: one throwing
+   * callback does not prevent the remaining callbacks or the structural write.
+   */
+  onChanged(
+    factory: ComponentFactory<unknown> | string,
+    cb: (entity: Entity, data?: Record<string, unknown>) => void,
+  ): () => void {
+    const kind = typeof factory === "string" ? factory : factory.kind;
+    let hooks = this.changedHooks.get(kind);
+    if (!hooks) {
+      hooks = new Set();
+      this.changedHooks.set(kind, hooks);
+    }
+    hooks.add(cb);
+    this.hasChangedHooks = true;
+    return () => {
+      hooks!.delete(cb);
+      if (hooks!.size === 0) {
+        this.hasChangedHooks = [...this.changedHooks.values()].some((set) => set.size > 0);
+      }
+    };
+  }
+
+  /** Alias for onChanged — the component was set/inserted. */
+  onSet(
+    factory: ComponentFactory<unknown> | string,
+    cb: (entity: Entity, data?: Record<string, unknown>) => void,
+  ): () => void {
+    return this.onChanged(factory, cb);
   }
 
   /** Returns true if the entity is alive. O(1) generation comparison (Gregory §17.5 handle pattern). */
@@ -447,9 +513,12 @@ export class World {
       const colIdx = this._componentIndex.get(kind)!.get(archId)!;
       const col = arch.columns[colIdx];
       const isF64 = col.isFloat64 === true;
+      const hooks = this.changedHooks.get(kind);
+      const hasHooks = this.hasChangedHooks && hooks !== undefined && hooks.size > 0;
       for (let i = 0; i < g.rows.length; i++) {
         const row = g.rows[i];
         const p = g.values[i];
+        let nextData: Record<string, unknown> | undefined;
         if (isF64) {
           // Float64 快路径：数值字段直写 TypedArray（零装箱）
           const fcol = col as Float64Column;
@@ -457,13 +526,16 @@ export class World {
             const arr = fcol.field(name);
             if (arr) arr[row] = p[name] as number;
           }
+          if (hasHooks) nextData = fcol.get(row);
         } else {
           const data = col.get(row);
           for (const name of Object.keys(p)) data[name] = p[name];
           col.set(row, data);
+          nextData = data;
         }
         arch.changedTicks[colIdx][row] = tick;
         this._lastChangedTick.set(kind, tick);
+        if (hasHooks) this._fireHooks(hooks, arch.entities[row], nextData);
       }
     }
     return written;
@@ -505,8 +577,22 @@ export class World {
     this: World,
     ...factories: F
   ) => Query<F>;
-  /** Drain removed-component buffer for the given factory. Clears after each call. */
+  /** Mutation-safe query facade using a per-call snapshot. */
+  queryMut: <const F extends readonly ComponentFactory<unknown>[]>(
+    this: World,
+    ...factories: F
+  ) => Query<F>;
+  /** Return explicit removeComponent events unseen by the current observer.
+   * Entity destruction is reported separately by drainKilled(). */
   removed: <D>(factory: ComponentFactory<D>) => Entity[];
+  /**
+   * Create independent Changed/Added cursors for a persistent query reader.
+   * QueryState is caller-owned; call forget()/clear() when retiring a long-lived
+   * reader, or use a query whose state lifetime matches the reader.
+   */
+  createQueryState(): QueryState {
+    return new QueryState();
+  }
 
   constructor() {
     // eslint-disable-next-line typescript/no-this-alias — needed for closure capture in ES5-compatible constructor
@@ -528,7 +614,10 @@ export class World {
           filter() {
             return this;
           },
-        };
+          withState() {
+            return this;
+          },
+        } as Query<F>;
       }
 
       /** Intersect archetype maps of all factories + With filters, exclude Without.
@@ -736,7 +825,7 @@ export class World {
         if (len > 0) cb(...colsSnap, entsSnap, len);
       }
 
-      function makeQuery(filters: QueryFilter[]): Query<F> {
+      function makeQuery(filters: QueryFilter[], state?: QueryState): Query<F> {
         // Separate filters: archetype-level (With/Without) vs row-level (Changed/Added)
         const withFilters = filters.filter((f) => f.kind === "with");
         const withoutFilters = filters.filter((f) => f.kind === "without");
@@ -855,13 +944,12 @@ export class World {
                       const ci = changedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.changedTicks[ci][row];
-                      const lastSeen = w._getLastSeenChanged(
-                        e,
-                        changedFilters[fi].factory.kind,
-                      );
+                      const kind = changedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readChanged(e, kind) : w._getLastSeenChanged(e, kind);
                       if (tick > lastSeen) {
                         anyChanged = true;
-                        w._setLastSeenChanged(e, changedFilters[fi].factory.kind, tick);
+                        if (state) state.writeChanged(e, kind, tick);
+                        else w._setLastSeenChanged(e, kind, tick);
                       }
                     }
                     if (!anyChanged) continue;
@@ -873,10 +961,12 @@ export class World {
                       const ci = addedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.addedTicks[ci][row];
-                      const lastSeen = w._getLastSeenAdded(e, addedFilters[fi].factory.kind);
+                      const kind = addedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readAdded(e, kind) : w._getLastSeenAdded(e, kind);
                       if (tick > lastSeen) {
                         anyAdded = true;
-                        w._setLastSeenAdded(e, addedFilters[fi].factory.kind, tick);
+                        if (state) state.writeAdded(e, kind, tick);
+                        else w._setLastSeenAdded(e, kind, tick);
                       }
                     }
                     if (!anyAdded) continue;
@@ -966,9 +1056,12 @@ export class World {
                       const ci = changedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.changedTicks[ci][row];
-                      if (tick > w._getLastSeenChanged(e, changedFilters[fi].factory.kind)) {
+                      const kind = changedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readChanged(e, kind) : w._getLastSeenChanged(e, kind);
+                      if (tick > lastSeen) {
                         anyChanged = true;
-                        w._setLastSeenChanged(e, changedFilters[fi].factory.kind, tick);
+                        if (state) state.writeChanged(e, kind, tick);
+                        else w._setLastSeenChanged(e, kind, tick);
                       }
                     }
                     if (!anyChanged) continue;
@@ -980,9 +1073,12 @@ export class World {
                       const ci = addedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.addedTicks[ci][row];
-                      if (tick > w._getLastSeenAdded(e, addedFilters[fi].factory.kind)) {
+                      const kind = addedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readAdded(e, kind) : w._getLastSeenAdded(e, kind);
+                      if (tick > lastSeen) {
                         anyAdded = true;
-                        w._setLastSeenAdded(e, addedFilters[fi].factory.kind, tick);
+                        if (state) state.writeAdded(e, kind, tick);
+                        else w._setLastSeenAdded(e, kind, tick);
                       }
                     }
                     if (!anyAdded) continue;
@@ -1033,13 +1129,12 @@ export class World {
                       const ci = changedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.changedTicks[ci][row];
-                      const lastSeen = w._getLastSeenChanged(
-                        e,
-                        changedFilters[fi].factory.kind,
-                      );
+                      const kind = changedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readChanged(e, kind) : w._getLastSeenChanged(e, kind);
                       if (tick > lastSeen) {
                         anyChanged = true;
-                        w._setLastSeenChanged(e, changedFilters[fi].factory.kind, tick);
+                        if (state) state.writeChanged(e, kind, tick);
+                        else w._setLastSeenChanged(e, kind, tick);
                       }
                     }
                     if (!anyChanged) continue;
@@ -1050,10 +1145,12 @@ export class World {
                       const ci = addedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.addedTicks[ci][row];
-                      const lastSeen = w._getLastSeenAdded(e, addedFilters[fi].factory.kind);
+                      const kind = addedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readAdded(e, kind) : w._getLastSeenAdded(e, kind);
                       if (tick > lastSeen) {
                         anyAdded = true;
-                        w._setLastSeenAdded(e, addedFilters[fi].factory.kind, tick);
+                        if (state) state.writeAdded(e, kind, tick);
+                        else w._setLastSeenAdded(e, kind, tick);
                       }
                     }
                     if (!anyAdded) continue;
@@ -1103,9 +1200,12 @@ export class World {
                       const ci = changedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.changedTicks[ci][row];
-                      if (tick > w._getLastSeenChanged(e, changedFilters[fi].factory.kind)) {
+                      const kind = changedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readChanged(e, kind) : w._getLastSeenChanged(e, kind);
+                      if (tick > lastSeen) {
                         anyChanged = true;
-                        w._setLastSeenChanged(e, changedFilters[fi].factory.kind, tick);
+                        if (state) state.writeChanged(e, kind, tick);
+                        else w._setLastSeenChanged(e, kind, tick);
                       }
                     }
                   }
@@ -1117,9 +1217,12 @@ export class World {
                       const ci = addedColIdxs[fi];
                       if (ci === undefined) continue;
                       const tick = arch.addedTicks[ci][row];
-                      if (tick > w._getLastSeenAdded(e, addedFilters[fi].factory.kind)) {
+                      const kind = addedFilters[fi].factory.kind;
+                      const lastSeen = state ? state.readAdded(e, kind) : w._getLastSeenAdded(e, kind);
+                      if (tick > lastSeen) {
                         anyAdded = true;
-                        w._setLastSeenAdded(e, addedFilters[fi].factory.kind, tick);
+                        if (state) state.writeAdded(e, kind, tick);
+                        else w._setLastSeenAdded(e, kind, tick);
                       }
                     }
                   }
@@ -1140,7 +1243,11 @@ export class World {
           },
 
           filter(...more: QueryFilter[]): Query<F> {
-            return makeQuery([...filters, ...more]);
+            return makeQuery([...filters, ...more], state);
+          },
+
+          withState(nextState: QueryState): Query<F> {
+            return makeQuery(filters, nextState);
           },
         } as Query<F>;
       }
@@ -1149,16 +1256,81 @@ export class World {
     };
 
     this.query = queryFn;
+    /** Mutation-safe query builder: forEach snapshots the complete result set
+     * before callbacks run, and filter()/withState() preserve that mode. */
+    this.queryMut = <const F extends readonly ComponentFactory<unknown>[]>(
+      ...factories: F
+    ): Query<F> => {
+      const wrap = (source: Query<F>): Query<F> => {
+        const runBatch = source.batch as unknown as (
+          callback: (...args: unknown[]) => void,
+        ) => void;
+        return {
+          ...source,
+          forEach(callback): void {
+            const visit = callback as unknown as (...args: unknown[]) => void;
+            const snapshot: Array<{ data: unknown[]; entity: Entity }> = [];
+            runBatch((...args) => {
+              const count = args.pop() as number;
+              const entities = args.pop() as Entity[];
+              const columns = args as Record<string, unknown>[][];
+              for (let i = 0; i < count; i++) {
+                snapshot.push({
+                  data: columns.map((column) => column[i]),
+                  entity: entities[i],
+                });
+              }
+            });
+            for (const { data, entity } of snapshot) {
+              if (!w.isAlive(entity)) continue;
+              visit(...data, entity);
+            }
+          },
+          batch(callback): void {
+            const chunks: unknown[][] = [];
+            runBatch((...args) => {
+              chunks.push(args);
+            });
+            const visit = callback as unknown as (...args: unknown[]) => void;
+            for (const args of chunks) visit(...args);
+          },
+          filter(...more: QueryFilter[]): Query<F> {
+            return wrap(source.filter(...more));
+          },
+          withState(nextState: QueryState): Query<F> {
+            return wrap(source.withState(nextState));
+          },
+        } as Query<F>;
+      };
+      return wrap(queryFn.call(w, ...factories) as Query<F>);
+    };
 
 
-    // ── Removed component buffer (drain-based, not query-based) ──
+    // ── Removed component buffer（Bevy RemovedComponents：双缓冲 2 帧窗口 + per-observer 游标）──
+    // 与 drainKilled() 同一套语义：帧内排序无关。排在移除者之后的系统本帧看到；
+    // 排在前面的系统下帧仍能看到（旧实现在帧**开始**清空缓冲，后者永远漏看）。
     this.removed = <D>(factory: ComponentFactory<D>): Entity[] => {
       const cid = _kindIds.get(factory.kind);
       if (cid === undefined) return [];
-      const set = w._removedBuffer[cid];
-      if (!set || set.size === 0) return [];
-      const result = [...set];
-      set.clear();
+      const state = w._removedState;
+      const prev = state.prev[cid];
+      const cur = state.buffer[cid];
+      const prevLen = prev?.length ?? 0;
+      const total = prevLen + (cur?.length ?? 0);
+      if (total === 0) return [];
+      const observer = w._currentObserver ?? "__global__";
+      let cursors = state.cursors.get(observer);
+      if (!cursors) {
+        cursors = new Map();
+        state.cursors.set(observer, cursors);
+      }
+      const cursor = cursors.get(cid) ?? 0;
+      if (cursor >= total) return [];
+      const result =
+        cursor < prevLen
+          ? [...(prev as Entity[]).slice(cursor), ...(cur as Entity[])]
+          : (cur as Entity[]).slice(cursor - prevLen);
+      cursors.set(cid, total);
       return result;
     };
   }
@@ -1167,9 +1339,36 @@ export class World {
   //  Public API — Sync
   // ══════════════════════════════════════════════════
 
-  _clearRemoved(): void {
-    for (const set of this._removedBuffer) {
-      if (set) set.clear();
+  /**
+   * 帧末轮转移除事件双缓冲（Bevy RemovedComponents 事件存活 2 帧）。
+   *
+   * 与 `drainKilled()` 同一套语义：**帧内排序无关**——排在移除者之后的系统本帧看到，
+   * 排在前面的系统下帧仍能看到。每 kind 独立平移游标：
+   * `new = clamp(old − 被淘汰帧长, 0, 新窗口长)`。数组换位复用（零分配）。
+   */
+  _rotateRemoved(): void {
+    const state = this._removedState;
+    const kinds = state.buffer.length;
+    if (kinds === 0) return;
+    for (let cid = 0; cid < kinds; cid++) {
+      const cur = state.buffer[cid];
+      const retired = state.prev[cid];
+      const retiredLen = retired?.length ?? 0;
+      const curLen = cur?.length ?? 0;
+      if (retiredLen === 0 && curLen === 0) continue;
+      const curArr = cur ?? [];
+      const retiredArr = retired ?? [];
+      retiredArr.length = 0; // 被淘汰的数组复用为下一帧的 buffer
+      state.prev[cid] = curArr;
+      state.buffer[cid] = retiredArr;
+      state.seen[cid]?.clear();
+      if (state.cursors.size === 0) continue;
+      for (const cursors of state.cursors.values()) {
+        const cursor = cursors.get(cid) ?? 0;
+        if (cursor === 0) continue;
+        const shifted = cursor - retiredLen;
+        cursors.set(cid, shifted < 0 ? 0 : shifted > curLen ? curLen : shifted);
+      }
     }
   }
 
@@ -1187,6 +1386,7 @@ export class World {
   }
 
   flushDestroyed(): void {
+    if (this._deferredDestroys.length > 0) this._structuralDirtyTick = this._tick + 1;
     this._flushDestroys();
   }
 
@@ -1201,14 +1401,21 @@ export class World {
 
   /**
    * Killed entities unseen by THIS observer (system). Bevy RemovedComponents 等价——
-   * 多读者：每个 observer 独立游标，都看到本帧全部 kill（不再单消费者）。
-   * 帧末 setCurrentObserver(null) 重置队列与游标。
+   * 多读者：每个 observer 独立游标，都看到全部未消费 kill（不再单消费者）。
+   * 双缓冲：kill 事件保留 2 帧（与 Bevy 事件双缓冲一致），因此系统与 killer 的
+   * 帧内先后顺序不影响可见性；帧末 setCurrentObserver(null) 轮转缓冲区。
    */
   drainKilled(): Entity[] {
     const observer = this._currentObserver ?? "__global__";
     const cursor = this._killedCursor.get(observer) ?? 0;
-    const result = this._killedThisFrame.slice(cursor);
-    this._killedCursor.set(observer, this._killedThisFrame.length);
+    const prevCount = this._killedPrevFrame.length;
+    const total = prevCount + this._killedThisFrame.length;
+    if (cursor >= total) return [];
+    const result =
+      cursor < prevCount
+        ? [...this._killedPrevFrame.slice(cursor), ...this._killedThisFrame]
+        : this._killedThisFrame.slice(cursor - prevCount);
+    this._killedCursor.set(observer, total);
     return result;
   }
 
@@ -1222,15 +1429,27 @@ export class World {
 
   setCurrentObserver(name: string | null): void {
     if (name === null) {
-      // 帧边界：重置 killed 队列与全部游标（Bevy RemovedComponents 帧语义）。
-      // hasKilledEntities 本帧保持 true——各系统独立消费，不因单消费者清空而漏清理。
+      // 帧边界：轮转双缓冲（prev ← thisFrame，thisFrame ← []）并把各 observer 游标
+      // 平移到新逻辑流坐标（减去被淘汰的前帧长度）。未消费的 kill 会留在 prev，
+      // 下帧对任何 observer 仍可见——帧内排序无关（Bevy RemovedComponents 语义）。
+      const retired = this._killedPrevFrame.length;
+      this._killedPrevFrame = this._killedThisFrame;
       this._killedThisFrame = [];
-      this._killedCursor.clear();
+      if (retired > 0) {
+        const total = this._killedPrevFrame.length;
+        for (const [observer, cursor] of this._killedCursor) {
+          const shifted = cursor - retired;
+          this._killedCursor.set(observer, shifted < 0 ? 0 : shifted > total ? total : shifted);
+        }
+      }
+      // 组件移除事件与实体消亡同帧边界轮转（同一套 2 帧窗口语义）。
+      this._rotateRemoved();
     }
     this._currentObserver = name;
   }
 
   isAnyDirty(kinds: string[], sinceTick: number): boolean {
+    if (this._structuralDirtyTick > sinceTick) return true;
     for (let i = 0; i < kinds.length; i++) {
       const lastChanged = this._lastChangedTick.get(kinds[i]);
       if (lastChanged !== undefined && lastChanged > sinceTick) return true;
@@ -1403,6 +1622,12 @@ export class World {
       arch.changedTicks[0].push(tick);
       this._entityIndex.set(entity, { archetypeId: arch.id, row: arch.entities.length - 1 });
       this._lastChangedTick.set(kind, tick);
+      const addHooks = this._onAddHooks.get(kind);
+      if (addHooks?.size) this._fireHooks(addHooks, entity);
+      if (this.hasChangedHooks) {
+        const hooks = this.changedHooks.get(kind);
+        if (hooks?.size) this._fireHooks(hooks, entity, data);
+      }
       return;
     }
 
@@ -1415,6 +1640,10 @@ export class World {
       oldArch.columns[existingColIdx].set(rec.row, data);
       oldArch.changedTicks[existingColIdx][rec.row] = tick;
       this._lastChangedTick.set(kind, tick);
+      if (this.hasChangedHooks) {
+        const hooks = this.changedHooks.get(kind);
+        if (hooks?.size) this._fireHooks(hooks, entity, data);
+      }
       return;
     }
 
@@ -1448,32 +1677,39 @@ export class World {
     this._lastChangedTick.set(kind, tick);
 
     // Fire on_add hooks (Bevy: first time this kind is added to this entity)
-    this._fireHooks(this._onAddHooks.get(kind), entity);
+    const addHooks = this._onAddHooks.get(kind);
+    if (addHooks?.size) this._fireHooks(addHooks, entity);
+    if (this.hasChangedHooks) {
+      const hooks = this.changedHooks.get(kind);
+      if (hooks?.size) this._fireHooks(hooks, entity, data);
+    }
   }
 
   /** Remove a component kind from an entity — moves to new archetype without that kind. */
   private _deleteComponent(entity: Entity, kind: string): void {
-    // Fire on_remove hooks before removing (Bevy: Remove runs before component data is dropped)
-    this._fireHooks(this._onRemoveHooks.get(kind), entity);
     const rec = this._entityIndex.get(entity);
     if (!rec) return;
     const oldArch = this._archetypes.get(rec.archetypeId)!;
     const colIdx = this._componentIndex.get(kind)?.get(oldArch.id);
     if (colIdx === undefined) return; // entity doesn't have this kind
-
-    // Track removal
-    const cid = _kindIds.get(kind);
-    if (cid !== undefined) {
-      let set = this._removedBuffer[cid];
-      if (!set) {
-        set = new Set();
-        this._removedBuffer[cid] = set;
+    // Fire on_remove hooks only when this entity actually has the component.
+    // Hooks receive the data that is about to be removed and are isolated from
+    // each other; removal itself always completes.
+    const removeHooks = this._onRemoveHooks.get(kind);
+    if (removeHooks?.size) {
+      const guard = `${entity}\0${kind}`;
+      if (this._removingComponents.has(guard)) return;
+      this._removingComponents.add(guard);
+      try {
+        this._fireHooks(removeHooks, entity, oldArch.columns[colIdx].get(rec.row));
+      } finally {
+        this._removingComponents.delete(guard);
       }
-      set.add(entity);
-      // 移除也算该 kind 的变更——bump lastChangedTick 让 dirty-check fast path
-      // 感知（Bevy change detection：RemovedComponents 独立 reader 可见移除）。
-      this._lastChangedTick.set(kind, this._tick);
     }
+
+    const tick = this._nextTick();
+
+    this.trackRemoval(entity, kind, tick);
 
     const newKinds = oldArch.type.filter((k) => k !== kind);
     if (newKinds.length === 0) {
@@ -1564,6 +1800,29 @@ export class World {
     this._deferredDestroys.length = 0;
   }
 
+  /** Record one same-frame removal per entity/kind and advance the dirty tick. */
+  private trackRemoval(entity: Entity, kind: string, tick: number): void {
+    const cid = _kindIds.get(kind);
+    if (cid === undefined) return;
+    let seen = this._removedState.seen[cid];
+    if (!seen) {
+      seen = new Set();
+      this._removedState.seen[cid] = seen;
+    }
+    let entries = this._removedState.buffer[cid];
+    if (!entries) {
+      entries = [];
+      this._removedState.buffer[cid] = entries;
+    }
+    if (!seen.has(entity)) {
+      seen.add(entity);
+      entries.push(entity);
+    }
+    // 移除也算该 kind 的变更——bump lastChangedTick 让 dirty-check fast path
+    // 感知（Bevy change detection：RemovedComponents 独立 reader 可见移除）。
+    this._lastChangedTick.set(kind, tick);
+  }
+
   /** Fire all hooks in a set for an entity. No-op if hooks is undefined/empty. */
   private _fireHooks(
     hooks: Set<(entity: Entity, data?: Record<string, unknown>) => void> | undefined,
@@ -1571,7 +1830,14 @@ export class World {
     data?: Record<string, unknown>,
   ): void {
     if (!hooks || hooks.size === 0) return;
-    for (const cb of hooks) cb(entity, data);
+    const callbacks = Array.from(hooks);
+    for (const cb of callbacks) {
+      try {
+        cb(entity, data);
+      } catch (error) {
+        console.error("[ecs] lifecycle hook failed:", error);
+      }
+    }
   }
 
   // ── Observer tick tracking ──

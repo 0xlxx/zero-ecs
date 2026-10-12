@@ -35,7 +35,7 @@ export {
   defaultsFromFields,
   hasBindableFields,
 } from "./field";
-export { Changed, Added, With, Without } from "./query";
+export { Changed, Added, With, Without, QueryState } from "./query";
 export type { Query, QueryFilter } from "./query";
 export { World } from "./world";
 export { Commands, EntityCommands } from "./commands";

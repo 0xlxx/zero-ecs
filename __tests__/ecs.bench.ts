@@ -5,9 +5,12 @@
 // --save: 保存当前模式的结果作为基线快照
 // --check: 平均吞吐相对基线回退 >15% 时 exit 1（性能门禁）
 
-import { World, defineComponent, Changed } from "../src/index.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
+
+const sourceUrl = process.env.ECS_BENCH_SOURCE_URL;
+const ecs = sourceUrl ? await import(sourceUrl) : await import("../src/index.js");
+const { World, defineComponent, Changed } = ecs;
 
 const is_bun = typeof (globalThis as any).Bun !== "undefined";
 const runtime = is_bun ? `Bun ${(globalThis as any).Bun.version}` : `Node ${process.version}`;
@@ -19,6 +22,15 @@ const FULL = process.argv.includes("--full") || process.argv.includes("--heavy")
 const BENCH_N = FULL ? 100_000 : 10_000;
 const BENCH_ITER = FULL ? 100 : 20;
 const SAMPLES = FULL ? 5 : 3;
+const CASE_ENV = (process.env.ECS_BENCH_CASE ?? "").trim();
+const CASE_FILTER: string[] = CASE_ENV.length === 0
+  ? []
+  : CASE_ENV.startsWith("[")
+    ? JSON.parse(CASE_ENV)
+    : [CASE_ENV];
+const CASE_SET = new Set(CASE_FILTER);
+const isSelectedCase = (name: string): boolean => CASE_SET.size === 0 || CASE_SET.has(name);
+const SAMPLE_GC = process.env.ECS_BENCH_NO_GC !== "1";
 const CHECK = process.argv.includes("--check");
 const THRESHOLD_PCT = 15;
 const PER_CASE_THRESHOLD_PCT = 25;
@@ -49,29 +61,78 @@ const varComps: any[] = [];
 for (let i = 0; i < 60; i++) varComps.push(defineComponent(`bnVar${i}`, { v: 0 }));
 
 // ── Benchmark harness ──
+interface BenchSample {
+  totalNs: number;
+  usPerIter: number;
+  iterationNs?: number[];
+}
+
 interface BenchResult {
   name: string;
   throughput: number;  // M entities/s
   usPerIter: number;
+  destructive: boolean;
+  samples: BenchSample[];
 }
 
-// min-of-samples: single-sample measurements are dominated by JIT warmup noise
-// (measured 3x variance on identical code). Sample repeatedly, report the min.
-function bench(name: string, setup: () => { run: () => void }, N: number, iter: number): BenchResult {
-  let ctx = setup();
-  for (let i = 0; i < Math.max(5, iter / 2); i++) ctx.run();
+function bench(
+  name: string,
+  setup: () => { run: () => void },
+  N: number,
+  iter: number,
+  destructive = false,
+): BenchResult {
+  if (!isSelectedCase(name)) {
+    return { name, throughput: 0, usPerIter: 0, destructive, samples: [] };
+  }
+
+  // Non-destructive cases keep the historical setup-once-per-sample semantics.
+  // Destructive cases must recreate their world/entities outside the timed
+  // region for every iteration, otherwise later iterations are mostly no-ops.
+  const warmupIterations = destructive ? Math.max(100, iter * 4) : Math.max(5, iter / 2);
+  if (destructive) {
+    for (let i = 0; i < warmupIterations; i++) {
+      const ctx = setup();
+      ctx.run();
+    }
+  } else {
+    const ctx = setup();
+    for (let i = 0; i < warmupIterations; i++) ctx.run();
+  }
+
   let bestElapsed = Infinity;
+  const samples: BenchSample[] = [];
   for (let s = 0; s < SAMPLES; s++) {
-    if (typeof (globalThis as any).Bun !== "undefined") (globalThis as any).Bun.gc(true);
-    ctx = setup();
-    const t0 = now();
-    for (let i = 0; i < iter; i++) ctx.run();
-    bestElapsed = Math.min(bestElapsed, now() - t0);
+    if (SAMPLE_GC && typeof (globalThis as any).Bun !== "undefined") (globalThis as any).Bun.gc(true);
+    let totalNs = 0;
+    let iterationNs: number[] | undefined;
+    if (destructive) {
+      iterationNs = [];
+      for (let i = 0; i < iter; i++) {
+        const ctx = setup();
+        const t0 = now();
+        ctx.run();
+        const elapsed = now() - t0;
+        iterationNs.push(elapsed);
+        totalNs += elapsed;
+      }
+    } else {
+      const ctx = setup();
+      const t0 = now();
+      for (let i = 0; i < iter; i++) ctx.run();
+      totalNs = now() - t0;
+    }
+    bestElapsed = Math.min(bestElapsed, totalNs);
+    samples.push({
+      totalNs,
+      usPerIter: totalNs / iter / 1000,
+      ...(iterationNs ? { iterationNs } : {}),
+    });
   }
   const elapsed = bestElapsed / NS_TO_MS;
   const throughput = (N * iter) / (elapsed / 1000) / 1e6;
   console.log(`  ${name.padEnd(50)} ${((elapsed/iter)*1000).toFixed(1).padStart(7)} µs/iter  ${throughput.toFixed(1).padStart(8)} M/s`);
-  return { name, throughput, usPerIter: (elapsed / iter) * 1000 };
+  return { name, throughput, usPerIter: (elapsed / iter) * 1000, destructive, samples };
 }
 
 // ── Scenarios ──
@@ -239,7 +300,7 @@ function runAll(): BenchResult[] {
     const w = new World();
     for (let i = 0; i < destroy_n; i++) entities.push(w.spawn([Pos.create({ x: i })]));
     return { run() { for (let i = 0; i < destroy_n; i++) w.destroy(entities[i]); w.flushDestroyed(); } };
-  }, destroy_n, destroyIter));
+  }, destroy_n, destroyIter, true));
 
   results.push(bench("destroy: table (10c, rich entity)", () => {
     const entities: Entity[] = [];
@@ -251,14 +312,14 @@ function runAll(): BenchResult[] {
       Hp.create({ current: 100, max: 100 }), Team.create({ id: 0 }),
     ]));
     return { run() { for (let i = 0; i < destroy_n; i++) w.destroy(entities[i]); w.flushDestroyed(); } };
-  }, destroy_n, destroyIter));
+  }, destroy_n, destroyIter, true));
 
   results.push(bench("destroy: tag only (tag)", () => {
     const entities: Entity[] = [];
     const w = new World();
     for (let i = 0; i < destroy_n; i++) entities.push(w.spawn([tag.create({ v: 1 })]));
     return { run() { for (let i = 0; i < destroy_n; i++) w.destroy(entities[i]); w.flushDestroyed(); } };
-  }, destroy_n, destroyIter));
+  }, destroy_n, destroyIter, true));
 
   // removeComponent consumes component data, so each run must recreate entities.
   // Spawn-only baselines let us subtract: removeCost = total - spawn
@@ -277,22 +338,21 @@ function runAll(): BenchResult[] {
   }, destroy_n, destroyIter));
 
   results.push(bench("removeComponent: table (remove Pos from Pos+Vel)", () => {
+    const w = new World(); const e: Entity[] = [];
+    for (let i = 0; i < destroy_n; i++) e.push(w.spawn([Pos.create({ x: i }), Vel.create({ dx: 1 })]));
     return { run() {
-      const w = new World(); const e: Entity[] = [];
-      for (let i = 0; i < destroy_n; i++) e.push(w.spawn([Pos.create({ x: i }), Vel.create({ dx: 1 })]));
       for (let i = 0; i < destroy_n; i++) w.removeComponent(e[i], Pos);
     } };
-  }, destroy_n, destroyIter));
+  }, destroy_n, destroyIter, true));
 
   results.push(bench("removeComponent: tag (remove tag from Pos+Tag)", () => {
+    const w = new World(); const e: Entity[] = [];
+    for (let i = 0; i < destroy_n; i++) e.push(w.spawn([Pos.create({ x: i }), tag.create({ v: 1 })]));
     return { run() {
-      const w = new World(); const e: Entity[] = [];
-      for (let i = 0; i < destroy_n; i++) e.push(w.spawn([Pos.create({ x: i }), tag.create({ v: 1 })]));
       for (let i = 0; i < destroy_n; i++) w.removeComponent(e[i], tag);
     } };
-  }, destroy_n, destroyIter));
+  }, destroy_n, destroyIter, true));
 
-  const { Changed } = require("../src/index.js");
   results.push(bench("filter: Changed(Pos).forEach", () => {
     const w = new World();
     for (let i = 0; i < N; i++) w.spawn([Pos.create({ x: i }), Vel.create({ dx: 1 })]);
@@ -425,6 +485,19 @@ function compare_with_snapshot(results: BenchResult[]): { avg: number | undefine
 
 // ── Main ──
 const results = runAll();
+
+if (process.argv.includes("--json")) {
+  console.log("BENCH_JSON " + JSON.stringify({
+    runtime,
+    mode: FULL ? "full" : "10k",
+    N: BENCH_N,
+    iter: BENCH_ITER,
+    samples: SAMPLES,
+    selectedCases: CASE_FILTER,
+    results,
+  }));
+  process.exit(0);
+}
 
 if (process.argv.includes("--save")) {
   save_snapshot(results);

@@ -72,15 +72,22 @@ component set. There is no separate sparse-set pool: all component kinds use
 one of the two column types above (`storage: "sparse"` was removed because it
 was never wired into the storage path).
 
-### Event staging
+### Structural mutation and destruction
 
-All structural mutations (spawn, destroy, add/remove component) are queued during system execution. `sync()` flushes them to pools. This guarantees stable iteration — queries return `Entity[]` snapshots that don't change mid-loop.
+`World.spawn`, `addComponent`, `setComponent`, and `removeComponent` are
+immediate operations. `Commands` is the deferred path for callers that need to
+stage structural writes; `applyCommands()` flushes that queue. Destroy marks the
+handle dead immediately and defers archetype cleanup until `flushDestroyed()`.
 
-```
-                ┌─ spawn ─┐
-writeComponent ─┤         ├─→ event queue ─→ sync() ─→ pools
-                └─ destroy┘
-```
+Destruction and component removal are separate contracts:
+
+- `drainKilled()` delivers destroyed entities to each observer.
+- `removed(T)` reports only explicit `removeComponent(entity, T)` calls.
+
+`query(...).forEach()` is the read-only live-column fast path. Use
+`queryMut(...).forEach()` when the callback may structurally mutate the result
+set; the mutation-safe snapshot is preserved across `.filter()` and
+`.withState()`.
 
 ### Archetype matching
 
@@ -99,6 +106,11 @@ const changed = world.query(Health).filter(Changed(Health)).entities();
 `Changed`/`Added` compare the row tick with the observer's last-seen tick and
 consume it on read (Bevy-like delta semantics). `world.isAnyDirty(kinds, sinceTick)`
 is the O(kinds) fast path used by stage `skipIfClean`.
+
+For independent persistent readers, create a per-query state with
+`world.createQueryState()` and bind it with `.withState(state)`. The state is
+caller-owned: call `state.forget(entity)` when an entity is retired, or
+`state.clear()` when the reader is no longer needed.
 
 ## ▣ Resources
 
@@ -132,10 +144,12 @@ class World {
 
   // Query
   query(...factories).forEach((...data, entity) => void)
+  queryMut(...factories).filter(...).withState(state).forEach((...data, entity) => void)
   query(...factories).batch((...columns, entities, count) => void)
   query(...factories).entities(): Entity[]
   query(...factories).first(): Entity | undefined
   query(...factories).filter(Changed(T), Added(T), With(T), Without(T))
+  removed(T): Entity[] // explicit removeComponent only
 
   // Resources
   insertResource(factory, data): void
@@ -148,6 +162,8 @@ class World {
   setCurrentObserver(name | null): void
   applyCommands(): void
   flushDestroyed(): void
+  drainKilled(): Entity[]
+  createQueryState(): QueryState
   lastChangedTick(kind): number
   isAnyDirty(kinds, sinceTick): boolean
 

@@ -3,6 +3,7 @@
 
 import {
   type FieldDesc,
+  cloneValue,
   defaultsFromFields,
 } from "./field.js";
 import type { Entity } from "./entity.js";
@@ -147,31 +148,37 @@ export function defineComponent<Data extends Record<string, unknown>, const Kind
   // Field mode: descriptor table → defaults + meta registry（isFieldTable 类型守卫内联收窄）。
   const dataDefaults: Record<string, unknown> = isFieldTable(defaults)
     ? defaultsFromFields(defaults)
-    : defaults;
+    : cloneValue(defaults);
   if (isFieldTable(defaults)) _fieldMeta.set(kind, defaults);
 
   _defaults.set(kind, dataDefaults);
   if (opts?.schema) _schemas.set(kind, opts.schema);
+  const hasMutableDefaults = Object.values(dataDefaults).some(
+    (value) => (typeof value === "object" && value !== null) || typeof value === "function",
+  );
 
   function factory(overrides?: Partial<Data>): ComponentOf<Data> {
     let data: Data;
     if (overrides) {
       // Merge defaults with overrides, but undefined values in overrides
       // do NOT override defaults — a missing field means "use the default".
-      data = { ...dataDefaults } as Data;
+      data = hasMutableDefaults ? (cloneValue(dataDefaults) as Data) : ({ ...dataDefaults } as Data);
       for (const key of Object.keys(overrides) as (keyof Data)[]) {
         const value = overrides[key];
         if (value !== undefined) data[key] = value;
       }
     } else {
-      data = { ...dataDefaults } as Data;
+      data = hasMutableDefaults ? (cloneValue(dataDefaults) as Data) : ({ ...dataDefaults } as Data);
     }
     return { type: kind, ...data };
   }
   factory.kind = kind;
-  factory.defaults = dataDefaults as Data;
+  Object.defineProperty(factory, "defaults", {
+    enumerable: true,
+    get: () => cloneValue(dataDefaults) as Data,
+  });
   factory.create = factory;
-  return factory;
+  return factory as unknown as ComponentFactory<Data, Kind>;
 }
 
 export type Component = { type: string } & Record<string, unknown>;

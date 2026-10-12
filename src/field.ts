@@ -307,6 +307,40 @@ export interface FieldError {
 
 export type FieldResult<T> = { ok: true; value: T } | { ok: false; errors: FieldError[] };
 
+/**
+ * Clone mutable default values so component instances never share arrays, maps,
+ * sets, typed arrays, or plain objects. Class instances are intentionally kept
+ * by reference: schema defaults are data, not arbitrary object factories.
+ */
+export function cloneValue<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => cloneValue(item)) as T;
+  if (value instanceof Map) {
+    const out = new Map<unknown, unknown>();
+    for (const [key, item] of value) out.set(cloneValue(key), cloneValue(item));
+    return out as T;
+  }
+  if (value instanceof Set) {
+    const out = new Set<unknown>();
+    for (const item of value) out.add(cloneValue(item));
+    return out as T;
+  }
+  if (value instanceof Date) return new Date(value.getTime()) as T;
+  if (ArrayBuffer.isView(value)) {
+    const view = value as unknown as { slice?: () => unknown; buffer: ArrayBuffer; byteOffset: number; byteLength: number };
+    if (view.slice) return view.slice() as T;
+    return new DataView(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength)) as T;
+  }
+  if (typeof value === "object" && value !== null) {
+    const proto = Object.getPrototypeOf(value);
+    if (proto === Object.prototype || proto === null) {
+      const out: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(value)) out[key] = cloneValue(item);
+      return out as T;
+    }
+  }
+  return value;
+}
+
 // ═══════════════════════════════════════════════════════════
 // Parsing — JSON protocol value → internal component value
 // ═══════════════════════════════════════════════════════════
@@ -474,7 +508,7 @@ export function parseFields(
         errors.push(err(name, `missing required field`, `provide "${name}"`));
         continue;
       }
-      if (desc.defaultValue !== undefined) out[name] = desc.defaultValue;
+      if (desc.defaultValue !== undefined) out[name] = cloneValue(desc.defaultValue);
       continue;
     }
     // Binding values pass through untouched — the protocol layer resolves them.
@@ -519,7 +553,7 @@ export function fieldCatalog(fields: Record<string, FieldDesc>): Record<string, 
     out[name] = {
       type: desc.kind,
       doc: desc.description,
-      default: desc.defaultValue,
+      default: cloneValue(desc.defaultValue),
       required: desc.isRequired,
       bindable: desc.canBind,
     };
@@ -531,7 +565,7 @@ export function fieldCatalog(fields: Record<string, FieldDesc>): Record<string, 
 export function defaultsFromFields(fields: Record<string, FieldDesc>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [name, desc] of Object.entries(fields))
-    if (desc.defaultValue !== undefined) out[name] = desc.defaultValue;
+    if (desc.defaultValue !== undefined) out[name] = cloneValue(desc.defaultValue);
   return out;
 }
 

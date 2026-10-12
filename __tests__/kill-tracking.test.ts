@@ -51,7 +51,7 @@ describe("Feature: drainKilled 多读者（每 observer 独立看到全部 kill�
     expect(world.drainKilled()).toEqual([e2]);
   });
 
-  it("Scenario: Given 帧末 setCurrentObserver(null)——When 下帧再 kill——Then 游标重置（新帧全新视图）", () => {
+  it("Scenario: Given 帧末 setCurrentObserver(null)——When 下帧再 kill——Then 未消费的旧 kill 仍可见（双缓冲 2 帧窗口）", () => {
     const world = new World();
     const e1 = world.spawn([C.create({ v: 1 })]);
     killAndFlush(world, e1);
@@ -66,6 +66,36 @@ describe("Feature: drainKilled 多读者（每 observer 独立看到全部 kill�
     killAndFlush(world, e2);
     world.setCurrentObserver("sys");
     expect(world.drainKilled()).toEqual([e2]);
+  });
+
+  it("Scenario: Given 系统排在 killer 之前（本帧漏看）——When 下帧再 drain——Then 仍看到该 kill（帧内排序无关）", () => {
+    const world = new World();
+
+    // 帧 N：sysA 先跑（并消费空空如也的队列），随后 killer 才销毁实体。
+    world.setCurrentObserver("sysA");
+    expect(world.drainKilled()).toEqual([]);
+
+    const e = world.spawn([C.create({ v: 1 })]);
+    killAndFlush(world, e);
+
+    world.setCurrentObserver(null); // 帧末轮转
+
+    // 帧 N+1：同一系统先跑——双缓冲保证它仍能看到上一帧的 kill。
+    world.setCurrentObserver("sysA");
+    expect(world.drainKilled()).toEqual([e]);
+    expect(world.drainKilled()).toEqual([]);
+  });
+
+  it("Scenario: Given kill 已存活 2 帧——When 第 3 帧——Then 事件过期（有界内存）", () => {
+    const world = new World();
+    const e = world.spawn([C.create({ v: 1 })]);
+    killAndFlush(world, e);
+
+    world.setCurrentObserver(null); // 帧 N 末：kill 进入 prev
+    world.setCurrentObserver(null); // 帧 N+1 末：无新 kill → 淘汰
+    world.setCurrentObserver("late");
+
+    expect(world.drainKilled()).toEqual([]);
   });
 
   it("Scenario: Given 裸模式（无 observer）——When drainKilled——Then __global__ 游标独立工作", () => {

@@ -32,6 +32,55 @@ export function Without(factory: ComponentFactory<unknown>): QueryFilter {
   return { kind: "without", factory };
 }
 
+/**
+ * Persistent per-query change-detection cursors.
+ *
+ * A QueryState belongs to one logical query reader. Reuse the same state across
+ * frames, but never share it between independent readers that need independent
+ * Changed/Added observation. QueryState is caller-owned: retire destroyed
+ * entities with forget() or call clear() when the reader is no longer needed.
+ */
+export class QueryState {
+  private added = new Map<Entity, Map<string, number>>();
+  private changed = new Map<Entity, Map<string, number>>();
+
+  readAdded(entity: Entity, kind: string): number {
+    return this.added.get(entity)?.get(kind) ?? 0;
+  }
+
+  writeAdded(entity: Entity, kind: string, tick: number): void {
+    let kinds = this.added.get(entity);
+    if (!kinds) {
+      kinds = new Map();
+      this.added.set(entity, kinds);
+    }
+    kinds.set(kind, tick);
+  }
+
+  readChanged(entity: Entity, kind: string): number {
+    return this.changed.get(entity)?.get(kind) ?? 0;
+  }
+
+  writeChanged(entity: Entity, kind: string, tick: number): void {
+    let kinds = this.changed.get(entity);
+    if (!kinds) {
+      kinds = new Map();
+      this.changed.set(entity, kinds);
+    }
+    kinds.set(kind, tick);
+  }
+
+  forget(entity: Entity): void {
+    this.added.delete(entity);
+    this.changed.delete(entity);
+  }
+
+  clear(): void {
+    this.added.clear();
+    this.changed.clear();
+  }
+}
+
 /** Extract the Data type from a ComponentFactory. */
 type ExtractData<F> = F extends ComponentFactory<infer D> ? D : never;
 
@@ -53,7 +102,8 @@ type BatchCallback<F extends readonly unknown[]> = (
 
 /** A lazy query object returned by world.query(...factories). */
 export interface Query<F extends readonly ComponentFactory<unknown>[]> {
-  /** Per-entity callback. Last arg is Entity. */
+  /** Read-only per-entity callback on the live column fast path. Last arg is Entity.
+   * Do not structurally mutate the queried entity set here; use World.queryMut(). */
   forEach(callback: ForEachCallback<F>): void;
   /** Batch callback: column arrays + entities + count. Write inner loop for max throughput. */
   batch(callback: BatchCallback<F>): void;
@@ -63,4 +113,6 @@ export interface Query<F extends readonly ComponentFactory<unknown>[]> {
   first(): Entity | undefined;
   /** Add filters: Changed/Added/With/Without. Composite with AND logic. */
   filter(...filters: QueryFilter[]): Query<F>;
+  /** Bind this query to persistent per-query Changed/Added cursors. */
+  withState(state: QueryState): Query<F>;
 }
