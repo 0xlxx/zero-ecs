@@ -68,12 +68,12 @@ jobs:
       - name: Pack smoke
         run: |
           bun pm pack --ignore-scripts
-          ls -l learnvis-ecs-*.tgz
+          ls -l zero-ecs-*.tgz
 
   ecs-bench-absolute:
     name: ecs-bench-absolute (matched self-hosted platform only)
     if: ${{ github.event_name == 'workflow_dispatch' && vars.LEARNVIS_ECS_BENCH_ABSOLUTE == 'true' }}
-    runs-on: [self-hosted, macOS, arm64, learnvis-ecs-bench]
+    runs-on: [self-hosted, macOS, arm64, zero-ecs-bench]
     timeout-minutes: 30
     env:
       LEARNVIS_REQUIRE_BENCH_PLATFORM: "1"

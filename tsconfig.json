@@ -15,7 +15,7 @@
     "verbatimModuleSyntax": true,
     "types": ["node"],
     "paths": {
-      "@learnvis/ecs": ["./src/index.ts"]
+      "zero-ecs": ["./src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "__tests__/**/*.ts"]

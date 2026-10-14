@@ -1,4 +1,4 @@
-// packages/ecs/src/index.ts — @learnvis/ecs barrel exports
+// packages/ecs/src/index.ts — zero-ecs barrel exports
 export { defineComponent, defineResource, fieldMeta } from "./component.js";
 export { f } from "./field.js";
 export { parseFields, fieldCatalog, defaultsFromFields, hasBindableFields, } from "./field.js";

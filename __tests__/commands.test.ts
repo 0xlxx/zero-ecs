@@ -4,8 +4,8 @@
 // resource commands, ordering, pre-reserved entity behavior
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { World, defineComponent, defineResource, Commands } from "@learnvis/ecs";
-import type { Entity, ComponentFactory } from "@learnvis/ecs";
+import { World, defineComponent, defineResource, Commands } from "zero-ecs";
+import type { Entity, ComponentFactory } from "zero-ecs";
 
 // ── Test components ──
 

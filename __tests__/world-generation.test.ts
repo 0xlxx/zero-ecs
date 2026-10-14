@@ -1,8 +1,8 @@
 // World generation / handle-space invariants — BDD regression guards
 
 import { describe, expect, it } from "vitest";
-import { World, defineComponent } from "@learnvis/ecs";
-import type { Entity } from "@learnvis/ecs";
+import { World, defineComponent } from "zero-ecs";
+import type { Entity } from "zero-ecs";
 
 const C = defineComponent("worldGenerationProbe", { v: 0 });
 

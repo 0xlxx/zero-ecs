@@ -1,5 +1,5 @@
 {
-  "name": "@learnvis/ecs",
+  "name": "zero-ecs",
   "version": "1.0.0",
   "description": "Zero-dependency archetype ECS \u2014 typed queries, change detection, and Bevy-aligned component lifecycle events.",
   "type": "module",
@@ -44,11 +44,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/0xlxx/learnvis-ecs.git"
+    "url": "git+https://github.com/0xlxx/zero-ecs.git"
   },
-  "homepage": "https://github.com/0xlxx/learnvis-ecs#readme",
+  "homepage": "https://github.com/0xlxx/zero-ecs#readme",
   "bugs": {
-    "url": "https://github.com/0xlxx/learnvis-ecs/issues"
+    "url": "https://github.com/0xlxx/zero-ecs/issues"
   },
   "publishConfig": {
     "access": "public"

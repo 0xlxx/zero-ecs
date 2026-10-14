@@ -1,4 +1,4 @@
-// packages/ecs/src/index.ts — @learnvis/ecs barrel exports
+// packages/ecs/src/index.ts — zero-ecs barrel exports
 
 export type { Entity } from "./entity.js";
 export { defineComponent, defineResource, fieldMeta } from "./component.js";

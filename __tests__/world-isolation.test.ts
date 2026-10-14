@@ -4,7 +4,7 @@
 // 并在销毁/复用 slot 时互相污染。
 
 import { describe, expect, it } from "vitest";
-import { World, defineComponent, defineResource, f } from "@learnvis/ecs";
+import { World, defineComponent, defineResource, f } from "zero-ecs";
 
 const Marker = defineComponent("worldIsolationMarker", { value: f.num() });
 

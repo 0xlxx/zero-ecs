@@ -2,8 +2,8 @@
 // drainKilled 多读者游标（Bevy RemovedComponents 等价）——Gherkin 验收
 
 import { describe, it, expect } from "vitest";
-import { World, defineComponent } from "@learnvis/ecs";
-import type { Entity } from "@learnvis/ecs";
+import { World, defineComponent } from "zero-ecs";
+import type { Entity } from "zero-ecs";
 
 const C = defineComponent("c", { v: 0 });
 

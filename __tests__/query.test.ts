@@ -3,8 +3,8 @@
 // Covers: entities(), filter(Changed/Added/With/Without), forEach, batch
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { World, defineComponent, defineResource, Changed, Added, With, Without } from "@learnvis/ecs";
-import type { Entity, ComponentFactory } from "@learnvis/ecs";
+import { World, defineComponent, defineResource, Changed, Added, With, Without } from "zero-ecs";
+import type { Entity, ComponentFactory } from "zero-ecs";
 
 // ── Test components ──
 

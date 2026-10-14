@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@learnvis/ecs",
+      "name": "zero-ecs",
       "devDependencies": {
         "@types/node": "^22.15.3",
         "oxfmt": "^0.56.0",

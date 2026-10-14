@@ -2,7 +2,7 @@
 // Changed/Added 过滤契约（Gherkin 验收——P2-03：masterChanged 快路径移除后按 kind 精确判断）
 
 import { describe, it, expect } from "vitest";
-import { World, defineComponent, Changed, Added } from "@learnvis/ecs";
+import { World, defineComponent, Changed, Added } from "zero-ecs";
 
 const A = defineComponent("a", { v: 0 });
 const B = defineComponent("b", { v: 0 });

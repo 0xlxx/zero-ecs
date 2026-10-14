@@ -142,7 +142,7 @@ function validatePolicy() {
 }
 
 function makeHeadSource() {
-  const dir = mkdtempSync(join(tmpdir(), "learnvis-ecs-head-"));
+  const dir = mkdtempSync(join(tmpdir(), "zero-ecs-head-"));
   const archivePath = join(dir, "head.tar");
   const archive = spawnSync("git", ["archive", "--format=tar", "HEAD", "src"], {
     cwd: root,

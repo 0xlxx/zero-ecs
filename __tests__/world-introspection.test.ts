@@ -2,7 +2,7 @@
 // World 实体内省 API（kinds() / componentData()）——Gherkin 验收（Prefab 快照契约）
 
 import { describe, it, expect } from "vitest";
-import { World, defineComponent } from "@learnvis/ecs";
+import { World, defineComponent } from "zero-ecs";
 
 const Position = defineComponent("position", { x: 0, y: 0 });
 const Velocity = defineComponent("velocity", { dx: 0, dy: 0 });

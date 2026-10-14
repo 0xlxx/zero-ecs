@@ -1,17 +1,17 @@
-# @learnvis/ecs
+# zero-ecs
 
 Zero-dependency Entity-Component-System — archetype column storage, event staging, typed queries. Define components with one function call, get full TypeScript inference for free.
 
 ## ▣ Installation
 
 ```bash
-pnpm add @learnvis/ecs
+pnpm add zero-ecs
 ```
 
 ## ▣ Quick Start
 
 ```ts
-import { World, defineComponent, Changed, f } from "@learnvis/ecs";
+import { World, defineComponent, Changed, f } from "zero-ecs";
 
 const Position = defineComponent("position", { x: f.num(), y: f.num() });
 const Velocity = defineComponent("velocity", { dx: f.num(), dy: f.num() });
@@ -178,7 +178,7 @@ class World {
 ## ▣ Events & deferred commands
 
 ```ts
-import { Events, Commands } from "@learnvis/ecs";
+import { Events, Commands } from "zero-ecs";
 
 const events = new Events<{ id: number }>();
 events.write({ id: 1 });   // readable next frame
@@ -194,7 +194,7 @@ world.applyCommands();
 Components are defined by a factory — no declaration merging:
 
 ```ts
-import { defineComponent, f } from "@learnvis/ecs";
+import { defineComponent, f } from "zero-ecs";
 
 export const Health = defineComponent("health", {
   current: f.num().default(100),

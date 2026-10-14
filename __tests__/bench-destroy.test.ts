@@ -3,7 +3,7 @@
 // Run with: pnpm vitest run packages/ecs/__tests__/bench-destroy.test.ts
 
 import { describe, it, expect } from "vitest";
-import { World, defineComponent, type Entity } from "@learnvis/ecs";
+import { World, defineComponent, type Entity } from "zero-ecs";
 
 const test_pos3_d = defineComponent("testPos3D", { x: 0, y: 0, z: 0 });
 const test_color = defineComponent("testColor", { value: 0xe06b38 });
