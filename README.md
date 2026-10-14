@@ -215,3 +215,27 @@ Implements the ECS storage patterns from Johnson's *Building an ECS* (2025):
 - **Ch4.1** Dependency-aware scheduling — system access declarations feed the Engine's DAG topological sort.
 
 Zero framework dependency. The World is a plain TypeScript class — usable in browsers, Node.js, or any JS runtime. The Engine layer (`@learnvis/engine`) adds system orchestration, pipeline stages, and rendering on top.
+
+## ▣ Development
+
+```bash
+bun install
+bun run typecheck   # tsc -p tsconfig.json (NodeNext)
+bun run test        # vitest run — 12 files / 199 tests
+bun run build       # tsc -p tsconfig.build.json → dist/*.js + *.d.ts
+bun run bench       # 10K benchmark suite with snapshot comparison
+bun run lint        # oxlint src __tests__
+```
+
+Three constraints worth knowing before you touch the source:
+
+- **Relative imports need the `.js` extension** (`./component.js`). The package ships per-file
+  compiled output, not a bundle, so an extensionless specifier resolves under bundlers but throws
+  `ERR_MODULE_NOT_FOUND` in Node ESM. Both tsconfigs use `NodeNext` so the compiler rejects those
+  imports instead of publishing a broken `dist/`.
+- **`new Array<T>(n)` is intentional** in the storage hot paths — preallocation without the
+  `undefined` fill that `Array.from({ length: n })` performs. `unicorn/no-new-array` is disabled
+  in `.oxlintrc.json` for that reason, not to hide debt.
+- **Tests run against `src/`** (see `vitest.config.ts`). The published `dist/` is verified
+  separately by the CI `Node smoke` step, so a green test run alone does not prove the artifact
+  is importable outside a bundler.

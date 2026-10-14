@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // packages/ecs/__tests__/change-filter.test.ts
 // Changed/Added 过滤契约（Gherkin 验收——P2-03：masterChanged 快路径移除后按 kind 精确判断）
 

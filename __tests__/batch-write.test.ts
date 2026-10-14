@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // Story P0-04：World.setComponents 批量写 API（列级批量 + Float64 快路径）
 
 import { describe, it, expect } from "vitest";

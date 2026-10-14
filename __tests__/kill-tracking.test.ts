@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // packages/ecs/__tests__/kill-tracking.test.ts
 // drainKilled 多读者游标（Bevy RemovedComponents 等价）——Gherkin 验收
 

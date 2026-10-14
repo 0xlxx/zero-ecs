@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // packages/ecs/__tests__/world-introspection.test.ts
 // World 实体内省 API（kinds() / componentData()）——Gherkin 验收（Prefab 快照契约）
 

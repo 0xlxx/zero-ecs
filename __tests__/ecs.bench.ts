@@ -1,4 +1,4 @@
-// packages/ecs/__tests__/ecs.bench.ts — ECS benchmark suite with snapshot comparison
+// __tests__/ecs.bench.ts — ECS benchmark suite with snapshot comparison
 // @ts-nocheck
 // 默认（10K 规模，日常回归）: bun run packages/ecs/__tests__/ecs.bench.ts [--save]
 // 完整（100K 规模，发布前）:  bun run packages/ecs/__tests__/ecs.bench.ts --full [--save]

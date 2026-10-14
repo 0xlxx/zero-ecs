@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // World generation / handle-space invariants — BDD regression guards
 
 import { describe, expect, it } from "vitest";

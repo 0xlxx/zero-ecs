@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      # 发布物的真实可用性：走 Node（不是 bun）导入构建产物——
+      # 只有这一步能证明 dist + exports 在非 TS 运行时下成立。
+      - name: Node smoke (built dist)
+        run: |
+          node --input-type=module -e "
+            const m = await import('./dist/index.js');
+            const required = ['World', 'defineComponent', 'Commands', 'Events', 'f'];
+            const missing = required.filter((k) => typeof m[k] === 'undefined');
+            if (missing.length) { console.error('missing exports:', missing); process.exit(1); }
+            console.log('exports ok:', required.join(', '));
+          "
+
+      - name: Pack smoke
+        run: |
+          bun pm pack --ignore-scripts
+          ls -l learnvis-ecs-*.tgz

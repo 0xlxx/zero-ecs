@@ -1,7 +1,7 @@
 // packages/ecs/src/index.ts — @learnvis/ecs barrel exports
 
-export type { Entity } from "./entity";
-export { defineComponent, defineResource, fieldMeta } from "./component";
+export type { Entity } from "./entity.js";
+export { defineComponent, defineResource, fieldMeta } from "./component.js";
 export type {
   Component,
   ComponentOf,
@@ -10,8 +10,8 @@ export type {
   DataOf,
   FieldSchema,
   FieldsToData,
-} from "./component";
-export { f } from "./field";
+} from "./component.js";
+export { f } from "./field.js";
 export type {
   FieldDesc,
   StrDesc,
@@ -28,16 +28,16 @@ export type {
   FieldError,
   FieldResult,
   FieldCatalogEntry,
-} from "./field";
+} from "./field.js";
 export {
   parseFields,
   fieldCatalog,
   defaultsFromFields,
   hasBindableFields,
-} from "./field";
-export { Changed, Added, With, Without, QueryState } from "./query";
-export type { Query, QueryFilter } from "./query";
-export { World } from "./world";
-export { Commands, EntityCommands } from "./commands";
+} from "./field.js";
+export { Changed, Added, With, Without, QueryState } from "./query.js";
+export type { Query, QueryFilter } from "./query.js";
+export { World } from "./world.js";
+export { Commands, EntityCommands } from "./commands.js";
 
 export { Events } from "./events.js";

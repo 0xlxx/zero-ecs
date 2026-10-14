@@ -1,7 +1,7 @@
 // packages/ecs/src/archetype.ts — Archetype column storage
 // Mertens: "Archetypes aggregate entities sharing identical component configurations."
-import type { Entity } from "./entity";
-import type { ObjectColumn, Float64Column } from "./storage";
+import type { Entity } from "./entity.js";
+import type { ObjectColumn, Float64Column } from "./storage.js";
 
 // ═══════════════════════════════════════════════════════════
 // Archetype — groups entities with identical component sets

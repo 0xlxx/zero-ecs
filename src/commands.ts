@@ -10,9 +10,9 @@
 //   cmd.entity(existing).remove(OldComponent).insert(NewComponent({...}));
 //   cmd.entity(existing).despawn();
 
-import type { Entity } from "./entity";
-import type { World } from "./world";
-import type { Component, ComponentFactory, ResourceFactory } from "./component";
+import type { Entity } from "./entity.js";
+import type { World } from "./world.js";
+import type { Component, ComponentFactory, ResourceFactory } from "./component.js";
 
 export class EntityCommands {
   private _world: World;

@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // Commands + EntityCommands unit tests — Bevy-style deferred mutation queue
 //
 // Covers: spawn(0/1/N), EntityCommands chain, entity() operations,

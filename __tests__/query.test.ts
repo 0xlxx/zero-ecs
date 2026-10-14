@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // Query + Filter unit tests — Bevy-style Query API
 //
 // Covers: entities(), filter(Changed/Added/With/Without), forEach, batch

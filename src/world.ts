@@ -1,6 +1,6 @@
 // packages/ecs/src/world.ts — World class
 // Central ECS data store: entity CRUD, component pools, query, archetypes.
-import type { Entity } from "./entity";
+import type { Entity } from "./entity.js";
 import {
   entityIndex,
   entityGen,
@@ -8,15 +8,15 @@ import {
   GEN_BITS,
   GEN_MASK,
   INDEX_MASK,
-} from "./entity";
-import { _kindOrder, _kindIds, _schemas } from "./component";
-import type { ComponentFactory, ResourceFactory } from "./component";
-import type { Component } from "./component";
-import { ObjectColumn, Float64Column, asObjectColumn } from "./storage";
-import type { Column } from "./storage";
-import type { Archetype } from "./archetype";
-import { QueryState } from "./query";
-import type { Query, QueryFilter } from "./query";
+} from "./entity.js";
+import { _kindOrder, _kindIds, _schemas } from "./component.js";
+import type { ComponentFactory, ResourceFactory } from "./component.js";
+import type { Component } from "./component.js";
+import { ObjectColumn, Float64Column, asObjectColumn } from "./storage.js";
+import type { Column } from "./storage.js";
+import type { Archetype } from "./archetype.js";
+import { QueryState } from "./query.js";
+import type { Query, QueryFilter } from "./query.js";
 
 // ═══════════════════════════════════════════════════════════
 // World

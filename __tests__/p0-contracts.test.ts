@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // P0 ECS contracts: defaults ownership, lifecycle hooks, query state,
 // removed-component readers, and mutation-safe forEach iteration.
 

@@ -1,6 +1,6 @@
 // packages/ecs/src/query.ts — Bevy-style Query with filters
-import type { Entity } from "./entity";
-import type { ComponentFactory } from "./component";
+import type { Entity } from "./entity.js";
+import type { ComponentFactory } from "./component.js";
 
 // ═══════════════════════════════════════════════════════════
 // Query

@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // Events<T> 双缓冲（Bevy Events<T> 语义）——Gherkin 验收（跨帧数据流契约）
 
 import { describe, it, expect } from "vitest";

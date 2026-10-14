@@ -1,18 +1,61 @@
 {
   "name": "@learnvis/ecs",
   "version": "1.0.0",
+  "description": "Zero-dependency archetype ECS — typed queries, change detection, and Bevy-aligned component lifecycle events.",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./src/index.ts",
-      "types": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "doc"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "lint": "oxlint --max-warnings 50 src/",
-    "fmt": "oxfmt src/",
-    "fmt:check": "oxfmt --check src/"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bench": "bun __tests__/ecs.bench.ts",
+    "lint": "oxlint src __tests__",
+    "fmt": "oxfmt src __tests__",
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
+  },
+  "keywords": [
+    "ecs",
+    "entity-component-system",
+    "archetype",
+    "data-oriented",
+    "typescript",
+    "webgpu",
+    "game-engine"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xlxx/learnvis-ecs.git"
+  },
+  "homepage": "https://github.com/0xlxx/learnvis-ecs#readme",
+  "bugs": {
+    "url": "https://github.com/0xlxx/learnvis-ecs/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "oxfmt": "^0.56.0",
+    "oxlint": "^1.71.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }

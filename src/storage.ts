@@ -1,4 +1,4 @@
-import type { FieldSchema } from "./component";
+import type { FieldSchema } from "./component.js";
 // packages/ecs/src/storage.ts — Column abstractions
 // ObjectColumn (Record[]) and Float64Column (TypedArray SoA).
 

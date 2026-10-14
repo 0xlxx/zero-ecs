@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 // World isolation BDD — entity allocator/generation 必须 per-World
 //
 // 回归：全局 _generations/_freeSlots 曾让 World A 认为 World B 的实体存活，
