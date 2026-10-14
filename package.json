@@ -22,11 +22,14 @@
     "node": ">=20"
   },
   "scripts": {
+    "prepare": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "bun __tests__/ecs.bench.ts",
+    "bench:check": "bun scripts/run-ecs-bench-gate.mjs",
+    "bench:check:contract": "bun scripts/run-ecs-bench-gate.mjs --contract-only",
     "lint": "oxlint src __tests__",
     "fmt": "oxfmt src __tests__",
     "prepublishOnly": "bun run typecheck && bun run test && bun run build"
