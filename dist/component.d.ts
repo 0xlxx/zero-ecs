@@ -1,0 +1,137 @@
+import { type FieldDesc } from "./field.js";
+import type { Entity } from "./entity.js";
+/**
+ * A component instance — factory defaults merged with overrides, plus `type` discriminant.
+ * Returned by `factory.create()`.
+ */
+export type ComponentOf<Data> = Data & {
+    type: string;
+};
+/**
+ * Component factory — the primary API for defining and interacting with component types.
+ *
+ * Gregory §17.2.2: property class IS the key. No string enums, no kind unions.
+ * `defineComponent(name, defaults)` returns a typed factory. Pass it to World methods
+ * for full type inference.
+ *
+ * Users extend the engine by calling `defineComponent()` in their own packages —
+ * zero declaration merging needed.
+ */
+export interface ComponentFactory<Data, Kind extends string = string> {
+    /** Create a component instance. Factory is directly callable: `Transform({ x: 1 })`. */
+    (overrides?: Partial<Data>): ComponentOf<Data>;
+    /** Runtime kind identifier — inferred as literal from defineComponent()'s first arg. */
+    readonly kind: Kind;
+    /** Default values — merged with overrides in overrides. */
+    readonly defaults: Data;
+    /** @deprecated Factory is directly callable: use `Transform({...})` instead of `Transform.create({...})`. */
+    create(overrides?: Partial<Data>): ComponentOf<Data>;
+}
+/** Per-kind default values. Populated by defineComponent(). */
+export declare const _defaults: Map<string, Record<string, unknown>>;
+/** Ordered component kinds — index is the component ID. */
+export declare const _kindOrder: string[];
+/** Kind → component ID (index into _kindOrder). */
+export declare const _kindIds: Map<string, number>;
+/** Per-kind bit position (1n << index). */
+export declare const _kindBits: Map<string, bigint>;
+/** Phase 2: per-kind TypedArray field schema. Undefined = ObjectColumn. */
+export type FieldSchema = Record<string, "float64">;
+export declare const _schemas: Map<string, FieldSchema>;
+/** Per-kind field descriptor tables — populated by defineComponent in field mode. */
+export declare const _fieldMeta: Map<string, Record<string, FieldDesc>>;
+/**
+ * Resource factory — typed key for World resources (Bevy-style `trait Resource: Component`).
+ *
+ * Wraps a ComponentFactory internally: resources are stored as components on dedicated
+ * "resource entities" — one entity per resource kind. This gives them tick-based change
+ * detection identical to entity components.
+ *
+ * ```ts
+ * const DataStore = defineResource<Map<string, unknown>>("dataStore");
+ * world.insertResource(DataStore, new Map());
+ * const map = world.resource(DataStore);
+ * world.resourceChanged(DataStore); // true/false, auto-tracked per system
+ * ```
+ */
+export interface ResourceFactory<Data, Kind extends string = string> {
+    readonly kind: Kind;
+    /** @internal — underlying ComponentFactory for entity storage + tick tracking. */
+    readonly _comp: ComponentFactory<{
+        _value: Data;
+    }, Kind>;
+    /** @internal — phantom for DataOf type extraction. Never exists at runtime. */
+    readonly _phantom?: Data;
+}
+/**
+ * Register a new resource key. Resources are stored as components on singleton entities,
+ * giving them tick-based change detection identical to entity components.
+ */
+export declare function defineResource<Data = unknown>(kind: string): ResourceFactory<Data, string>;
+/**
+ * Register a new component type.
+ *
+ * Two modes:
+ * - **Field mode** (default): `defineComponent("curve", { expr: f.str()... })` —
+ *   every value is a FieldDesc. The descriptor table IS the protocol contract:
+ *   defaults, validation, JSON encoding, and LLM docs all derive from it.
+ * - **Raw mode**: plain defaults object (internal/performance-sensitive
+ *   components that never cross the protocol boundary).
+ *
+ * Returns a typed factory.
+ */
+export declare function defineComponent<const Kind extends string, F extends Record<string, FieldDesc>>(kind: Kind, fields: F, opts?: {
+    schema?: FieldSchema;
+}): ComponentFactory<FieldsToData<F>, Kind>;
+export declare function defineComponent<Data extends Record<string, unknown>, const Kind extends string = string>(kind: Kind, defaults: Data, opts?: {
+    schema?: FieldSchema;
+}): ComponentFactory<Data, Kind>;
+export type Component = {
+    type: string;
+} & Record<string, unknown>;
+/** Extract the Data type from a ComponentFactory or ResourceFactory. */
+export type DataOf<F> = F extends ComponentFactory<infer D> ? D : F extends {
+    _phantom?: infer D;
+} ? Exclude<D, undefined> : never;
+type DescToValue<D> = D extends {
+    kind: "str";
+} | {
+    kind: "entityRef";
+} ? string : D extends {
+    kind: "entityId";
+} ? Entity : D extends {
+    kind: "branded";
+    _phantom?: infer B;
+} ? B : D extends {
+    kind: "num";
+} | {
+    kind: "int";
+} | {
+    kind: "hex";
+} ? number : D extends {
+    kind: "bool";
+} ? boolean : D extends {
+    kind: "vec3";
+} ? readonly [number, number, number] : D extends {
+    kind: "tuple";
+} ? unknown[] : D extends {
+    kind: "array";
+    elem: infer E extends import("./field.js").FieldDesc;
+} ? DescToValue<E>[] : D extends {
+    kind: "map";
+} ? Record<string, unknown> : D extends {
+    kind: "obj";
+    shape: infer S extends Record<string, FieldDesc>;
+} ? {
+    [K in keyof S]: DescToValue<S[K]>;
+} : D extends {
+    kind: "any";
+} ? unknown : never;
+/** Field descriptor table → component instance data type. */
+export type FieldsToData<F extends Record<string, FieldDesc>> = {
+    [K in keyof F]: DescToValue<F[K]>;
+};
+/** Field descriptor table for a kind, or undefined (raw-mode component). */
+export declare function fieldMeta(kind: string): Record<string, FieldDesc> | undefined;
+export {};
+//# sourceMappingURL=component.d.ts.map

@@ -40,6 +40,16 @@ jobs:
       - name: Build
         run: bun run build
 
+      # dist/ 提交进仓库是为了让 git 依赖（bun 不装 git 依赖的 devDeps，跑不了 prepare）
+      # 开箱可用。代价是必须防漂移：重新构建后 dist 有任何改动即失败。
+      - name: dist is up to date with src
+        run: |
+          bun run build
+          git diff --exit-code -- dist || {
+            echo "dist/ is stale — run 'bun run build' and commit the result";
+            exit 1;
+          }
+
       - name: Bench contract (platform policy + harness hash + case set)
         run: bun run bench:check:contract
 

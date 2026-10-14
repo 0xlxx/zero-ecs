@@ -1,7 +1,7 @@
 {
   "name": "@learnvis/ecs",
   "version": "1.0.0",
-  "description": "Zero-dependency archetype ECS — typed queries, change detection, and Bevy-aligned component lifecycle events.",
+  "description": "Zero-dependency archetype ECS \u2014 typed queries, change detection, and Bevy-aligned component lifecycle events.",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -22,7 +22,6 @@
     "node": ">=20"
   },
   "scripts": {
-    "prepare": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
