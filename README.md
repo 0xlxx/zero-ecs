@@ -1,6 +1,6 @@
 # zero-ecs
 
-Zero-dependency Entity-Component-System — archetype column storage, event staging, typed queries. Define components with one function call, get full TypeScript inference for free.
+Lightweight Entity-Component-System — archetype column storage, event staging, typed queries. Zero ceremony: define a component with one function call and get full TypeScript inference for free.
 
 ## ▣ Installation
 
@@ -214,7 +214,7 @@ Implements the ECS storage patterns from Johnson's *Building an ECS* (2025):
 - **Ch5.1** Archetype matching — per-kind archetype indexes + And/With/Without candidate intersection.
 - **Ch4.1** Dependency-aware scheduling — system access declarations feed the Engine's DAG topological sort.
 
-Zero framework dependency. The World is a plain TypeScript class — usable in browsers, Node.js, or any JS runtime. The Engine layer (`@learnvis/engine`) adds system orchestration, pipeline stages, and rendering on top.
+No framework required. The World is a plain TypeScript class — usable in browsers, Node.js, or any JS runtime. The Engine layer (`@learnvis/engine`) adds system orchestration, pipeline stages, and rendering on top.
 
 ## ▣ Development
 
